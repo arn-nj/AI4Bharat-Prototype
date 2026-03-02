@@ -1,0 +1,87 @@
+{
+  "trained_at": "2026-02-28T19:37:50.397297",
+  "data_source": "training_data_phase5_1235records_fixed.csv",
+  "n_train": 1049,
+  "n_test": 186,
+  "best_model": "Logistic Regression (baseline)",
+  "numeric_features": [
+    "model_year",
+    "age_in_months",
+    "battery_cycles",
+    "battery_health_percent",
+    "smart_sectors_reallocated",
+    "thermal_events_count",
+    "daily_usage_hours",
+    "performance_rating",
+    "total_incidents",
+    "critical_incidents",
+    "high_incidents",
+    "medium_incidents",
+    "low_incidents",
+    "avg_resolution_time_hours",
+    "incident_rate_per_month",
+    "critical_incident_ratio",
+    "battery_degradation_rate",
+    "thermal_events_per_month",
+    "data_completeness"
+  ],
+  "categorical_features": [
+    "device_type",
+    "brand",
+    "department",
+    "region",
+    "usage_type",
+    "os",
+    "overheating_issues"
+  ],
+  "label_classes": [
+    "high",
+    "low",
+    "medium"
+  ],
+  "label_encoding": {
+    "high": 0,
+    "low": 1,
+    "medium": 2
+  },
+  "thresholds": {
+    "high": "risk_score >= 0.55",
+    "medium": "risk_score in [0.35, 0.55)",
+    "low": "risk_score < 0.35"
+  },
+  "metrics": {
+    "test": {
+      "accuracy": 0.9462,
+      "auc_roc_macro_ovr": 0.9962,
+      "per_class": {
+        "high": {
+          "precision": 0.9437,
+          "recall": 0.971,
+          "f1_score": 0.9571,
+          "support": 69
+        },
+        "low": {
+          "precision": 0.9756,
+          "recall": 0.9302,
+          "f1_score": 0.9524,
+          "support": 43
+        },
+        "medium": {
+          "precision": 0.9324,
+          "recall": 0.9324,
+          "f1_score": 0.9324,
+          "support": 74
+        }
+      }
+    },
+    "validation": {
+      "accuracy": 0.9731,
+      "auc_roc_macro_ovr": 0.999
+    },
+    "cross_validation_5fold": {
+      "mean_accuracy": 0.959,
+      "mean_auc_roc": 0.9972
+    }
+  },
+  "target_met": true
+}
