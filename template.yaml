@@ -1,0 +1,202 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+
+Description: >
+  E-Waste Asset Lifecycle Optimizer — AWS SAM template
+  Deploys FastAPI on Lambda behind API Gateway, with S3 for storage
+  and IAM permissions for Bedrock (Qwen3 model).
+
+# ---------------------------------------------------------------------------
+# Parameters
+# ---------------------------------------------------------------------------
+Parameters:
+  StageName:
+    Type: String
+    Default: prod
+    AllowedValues: [dev, staging, prod]
+    Description: Deployment stage
+
+  S3BucketName:
+    Type: String
+    Default: ewaste-asset-optimizer
+    Description: S3 bucket for model artifacts, results, and documents
+
+  BedrockModelId:
+    Type: String
+    Default: qwen.qwen3-30b-a3b
+    Description: Amazon Bedrock model identifier for LLM inference
+
+  BedrockRegion:
+    Type: String
+    Default: us-east-1
+    Description: AWS region for Bedrock API calls
+
+# ---------------------------------------------------------------------------
+# Globals — shared settings applied to all Lambda functions
+# ---------------------------------------------------------------------------
+Globals:
+  Function:
+    Timeout: 60
+    MemorySize: 1024
+    Runtime: python3.12
+    Architectures:
+      - x86_64
+    Environment:
+      Variables:
+        S3_BUCKET_NAME: !Ref StorageBucket
+        AWS_REGION_OVERRIDE: !Ref BedrockRegion
+        BEDROCK_MODEL_ID: !Ref BedrockModelId
+        STAGE: !Ref StageName
+
+# ---------------------------------------------------------------------------
+# Resources
+# ---------------------------------------------------------------------------
+Resources:
+
+  # ── S3 Bucket for storage ──────────────────────────────────────────────
+  StorageBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${S3BucketName}-${StageName}-${AWS::AccountId}"
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOldResults
+            Status: Enabled
+            Prefix: results/
+            ExpirationInDays: 90
+          - Id: TransitionModelsToIA
+            Status: Enabled
+            Prefix: models/
+            Transitions:
+              - StorageClass: STANDARD_IA
+                TransitionInDays: 30
+      Tags:
+        - Key: Project
+          Value: EWasteAssetOptimizer
+        - Key: Stage
+          Value: !Ref StageName
+
+  # ── API Gateway (HTTP API) ─────────────────────────────────────────────
+  ApiGateway:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: !Ref StageName
+      CorsConfiguration:
+        AllowOrigins:
+          - "*"
+        AllowMethods:
+          - GET
+          - POST
+          - OPTIONS
+        AllowHeaders:
+          - Content-Type
+          - Authorization
+          - X-Amz-Date
+          - X-Api-Key
+      Tags:
+        Project: EWasteAssetOptimizer
+        Stage: !Ref StageName
+
+  # ── Lambda Function — FastAPI backend ──────────────────────────────────
+  BackendFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "ewaste-optimizer-api-${StageName}"
+      Description: FastAPI backend for E-Waste Asset Lifecycle Optimizer
+      CodeUri: .
+      Handler: src.api_integration.backend.main.handler
+      Timeout: 60
+      MemorySize: 2048
+      EphemeralStorage:
+        Size: 1024
+      Environment:
+        Variables:
+          S3_BUCKET_NAME: !Ref StorageBucket
+          AWS_REGION: !Ref BedrockRegion
+          BEDROCK_MODEL_ID: !Ref BedrockModelId
+          S3_MODEL_PREFIX: "models/"
+          S3_RESULTS_PREFIX: "results/"
+          S3_DOCUMENTS_PREFIX: "documents/"
+      Policies:
+        # S3 access
+        - S3CrudPolicy:
+            BucketName: !Ref StorageBucket
+        # Bedrock access
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+                - bedrock:Converse
+              Resource:
+                - !Sub "arn:aws:bedrock:${BedrockRegion}::foundation-model/${BedrockModelId}"
+                - !Sub "arn:aws:bedrock:${BedrockRegion}:${AWS::AccountId}:inference-profile/*"
+        # CloudWatch Logs
+        - Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: "*"
+      Events:
+        ApiCatchAll:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref ApiGateway
+            Path: /{proxy+}
+            Method: ANY
+        ApiRoot:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref ApiGateway
+            Path: /
+            Method: ANY
+      Tags:
+        Project: EWasteAssetOptimizer
+        Stage: !Ref StageName
+
+  # ── CloudWatch Log Group ───────────────────────────────────────────────
+  BackendLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/ewaste-optimizer-api-${StageName}"
+      RetentionInDays: 30
+
+# ---------------------------------------------------------------------------
+# Outputs
+# ---------------------------------------------------------------------------
+Outputs:
+  ApiUrl:
+    Description: API Gateway endpoint URL
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${StageName}"
+
+  ApiDocsUrl:
+    Description: Swagger UI URL
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/docs"
+
+  StorageBucketName:
+    Description: S3 bucket for model artifacts and analysis results
+    Value: !Ref StorageBucket
+
+  StorageBucketArn:
+    Description: S3 bucket ARN
+    Value: !GetAtt StorageBucket.Arn
+
+  FunctionArn:
+    Description: Lambda function ARN
+    Value: !GetAtt BackendFunction.Arn
+
+  FunctionName:
+    Description: Lambda function name
+    Value: !Ref BackendFunction

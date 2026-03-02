@@ -1,21 +1,3 @@
-"""
-llm.py — LLM client using Amazon Bedrock (Qwen3 model)
-========================================================
-
-Replaces the previous Azure OpenAI client with Amazon Bedrock, using the
-Qwen3 model for all LLM inference.  The public interface (LLMOpenAI class
-name and method signatures) is preserved so that callers (device_analyser.py)
-require no changes.
-
-Environment variables (read from .env or process environment):
-  AWS_REGION               — Bedrock region (default: us-east-1)
-  BEDROCK_MODEL_ID         — Bedrock model identifier (default: qwen.qwen3-30b-a3b)
-  AWS_ACCESS_KEY_ID        — (optional if running on Lambda with IAM role)
-  AWS_SECRET_ACCESS_KEY    — (optional if running on Lambda with IAM role)
-"""
-
-from __future__ import annotations
-
 import json
 import logging
 import os
@@ -23,9 +5,9 @@ import time
 from pathlib import Path
 from typing import Optional
 
-import boto3
-from botocore.config import Config
+import requests
 from dotenv import load_dotenv
+from openai import AzureOpenAI
 
 from prompts import (
     build_compliance_doc_prompt,
@@ -45,13 +27,7 @@ _DOTENV_PATH = Path(__file__).parent.parent.parent / ".env"
 log = logging.getLogger(__name__)
 
 
-class LLMOpenAI:
-    """
-    LLM client backed by Amazon Bedrock (Qwen3 model).
-
-    The class name is kept as LLMOpenAI for backward compatibility with
-    existing imports in device_analyser.py.
-    """
+class LLMOpenAI():
 
     def __init__(self) -> None:
         # Load .env from the repo root so the path is stable regardless of
@@ -60,98 +36,90 @@ class LLMOpenAI:
         if not loaded:
             log.warning(
                 "load_dotenv: .env file not found at '%s'. "
-                "AWS credentials must be set as environment variables or via IAM role.",
+                "Azure OpenAI credentials must be set as environment variables.",
                 _DOTENV_PATH,
             )
 
-        self._region = os.getenv("AWS_REGION", "us-east-1")
-        self._model_id = os.getenv("BEDROCK_MODEL_ID", "qwen.qwen3-30b-a3b")
-
-        bedrock_config = Config(
-            region_name=self._region,
-            read_timeout=_LLM_TIMEOUT_SECONDS + 5,
-            retries={"max_attempts": 2, "mode": "adaptive"},
+        endpoint    = os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv("azure_oai_endpoint")
+        api_key     = os.getenv("AZURE_OPENAI_API_KEY")  or os.getenv("azure_oai_key")
+        api_version = (
+            os.getenv("AZURE_OPENAI_API_VERSION")
+            or os.getenv("azure_oai_version")
+            or "2024-02-01"   # stable default — override via .env if needed
         )
 
-        self._client = boto3.client(
-            "bedrock-runtime",
-            config=bedrock_config,
+        missing = [name for name, val in [
+            ("AZURE_OPENAI_ENDPOINT", endpoint),
+            ("AZURE_OPENAI_API_KEY",  api_key),
+        ] if not val]
+
+        if missing:
+            raise EnvironmentError(
+                f"Missing Azure OpenAI credential(s): {', '.join(missing)}. "
+                f"Add them to '{_DOTENV_PATH}' or set them as environment variables. "
+                f"Expected keys: AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY. "
+                f"Optional: AZURE_OPENAI_API_VERSION (defaults to 2024-02-01)."
+            )
+
+        self.openai = AzureOpenAI(
+            azure_endpoint=endpoint,
+            api_key=api_key,
+            api_version=api_version,
         )
 
-        log.info(
-            "Bedrock LLM client initialised — region=%s  model=%s",
-            self._region,
-            self._model_id,
+        
+
+    # Method for calling LLM using openai client
+    def generic_llm(self,system_message,question)->str: 
+ 
+        chat_completion = self.openai.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": system_message},
+            {"role": "user", "content": question}
+        ],
+        #logit_bias= {2435: -100, 640: -100},
+        max_tokens= 2000,
+        temperature= 0, # Optional, Defaults to 1. Range: 0 to 2
+        top_p= 1 # Optional, Defaults to 1. It is generally recommended to alter this or temperature but not both.
+        )
+        response = chat_completion.choices[0].message.content
+        return response
+    
+    # Method for calling LLM via REST API
+    def generic_llm_rest(self, system_message, query):
+        azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv("azure_oai_endpoint")
+        api_key        = os.getenv("AZURE_OPENAI_API_KEY")  or os.getenv("azure_oai_key")
+        api_version    = (
+            os.getenv("AZURE_OPENAI_API_VERSION")
+            or os.getenv("azure_oai_version")
+            or "2024-02-01"
         )
 
-    # ------------------------------------------------------------------
-    # Core inference methods
-    # ------------------------------------------------------------------
-
-    def generic_llm(self, system_message: str, question: str) -> str:
-        """
-        Call Bedrock Converse API with Qwen3 model.
-        Returns the assistant's text response.
-        """
-        messages = [
-            {"role": "user", "content": [{"text": question}]},
-        ]
-
-        system = [{"text": system_message}]
-
-        inference_config = {
-            "maxTokens": 2000,
-            "temperature": 0.0,
-            "topP": 1.0,
+        api_endpoint = azure_endpoint
+        payload_headers = {
+            "Content-Type": "application/json",
+            "api-key": api_key,
         }
-
-        response = self._client.converse(
-            modelId=self._model_id,
-            messages=messages,
-            system=system,
-            inferenceConfig=inference_config,
-        )
-
-        output_message = response["output"]["message"]
-        result_text = ""
-        for block in output_message["content"]:
-            if "text" in block:
-                result_text += block["text"]
-
-        return result_text
-
-    def generic_llm_rest(self, system_message: str, query: str) -> str:
-        """
-        Alternative invocation using Bedrock InvokeModel API (raw payload).
-        Falls back to the same Bedrock endpoint but uses the lower-level API.
-        """
         payload = {
-            "messages": [
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": query},
-            ],
-            "max_tokens": 2000,
-            "temperature": 0.0,
-            "top_p": 1.0,
-        }
-
-        response = self._client.invoke_model(
-            modelId=self._model_id,
-            contentType="application/json",
-            accept="application/json",
-            body=json.dumps(payload),
-        )
-
-        result = json.loads(response["body"].read())
-        # Handle different response formats from different model providers
-        if "choices" in result:
-            return result["choices"][0]["message"]["content"]
-        elif "output" in result:
-            return result["output"]["text"]
-        elif "content" in result:
-            return result["content"][0]["text"]
-        else:
-            return str(result)
+                "messages": [
+                                {"role": "system", "content": [{"type": "text","text": system_message}]},
+                                {"role": "user", "content": [{"type": "text","text": query}]}
+                            ],
+                "temperature": 0,
+                "top_p": 1,
+                "max_tokens": 2000
+                }
+    
+        try:
+            response = requests.post(api_endpoint, headers=payload_headers, json=payload)
+            response.raise_for_status()  # Will raise an HTTPError if the HTTP request returned an unsuccessful status code
+        except requests.RequestException as e:
+         raise SystemExit(f"Failed to make the request. Error: {e}")
+ 
+        required_data = response.json()
+    
+        return required_data['choices'][0]["message"]["content"]
 
     # ------------------------------------------------------------------
     # Purpose-specific methods — each uses the matching prompt builder
@@ -201,8 +169,7 @@ class LLMOpenAI:
             if time.time() - start > _LLM_TIMEOUT_SECONDS:
                 raise TimeoutError("LLM response exceeded timeout threshold")
             return result
-        except Exception as exc:
-            log.warning("LLM explanation failed (%s), using fallback", exc)
+        except Exception:
             return fallback_explanation(
                 recommended_action=recommended_action,
                 risk_score=risk_score,
@@ -244,8 +211,7 @@ class LLMOpenAI:
             if time.time() - start > _LLM_TIMEOUT_SECONDS:
                 raise TimeoutError("LLM response exceeded timeout threshold")
             return json.loads(raw)
-        except Exception as exc:
-            log.warning("LLM ITSM task failed (%s), using fallback", exc)
+        except Exception:
             return fallback_itsm_task(
                 asset_id=asset_id,
                 recommended_action=recommended_action,
@@ -264,6 +230,8 @@ class LLMOpenAI:
     ) -> dict:
         """
         Requirement 10 — Extract entities from a compliance document and flag gaps.
+        Returns a dict with summary, extracted_entities, missing_fields,
+        verification_status, and recommendations.
         """
         system_msg, user_msg = build_compliance_doc_prompt(
             document_type=document_type,
@@ -294,6 +262,7 @@ class LLMOpenAI:
     ) -> str:
         """
         Requirement 11 — Answer a natural-language question about asset lifecycle data.
+        Returns a plain-text response with provenance and suggested follow-up queries.
         """
         system_msg, user_msg = build_conversational_prompt(
             user_query=user_query,

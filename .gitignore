@@ -1,3 +1,7 @@
 /.venv
 __pycache__/
 .env
+
+# AWS SAM build artifacts
+.aws-sam/
+packaged.yaml

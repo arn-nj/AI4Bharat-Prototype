@@ -21,11 +21,13 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from mangum import Mangum
 
 # ---------------------------------------------------------------------------
 # Logging — configure once so all backend modules share the same format.
@@ -46,8 +48,24 @@ _META_PATH   = _SRC_DIR / "model_training" / "models" / "model_metadata.json"
 if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
 
+_STORAGE_DIR = _SRC_DIR / "storage"
+if str(_STORAGE_DIR) not in sys.path:
+    sys.path.insert(0, str(_STORAGE_DIR))
+
 from device_analyser import DeviceAnalyser  # noqa: E402
 from models import AnalysisResult, DeviceInput  # noqa: E402
+
+# S3 storage — optional, enabled when S3_BUCKET_NAME is set
+_s3_storage = None
+try:
+    from s3_storage import S3Storage
+    if os.getenv("S3_BUCKET_NAME"):
+        _s3_storage = S3Storage()
+        log.info("S3 storage enabled — bucket=%s", os.getenv("S3_BUCKET_NAME"))
+    else:
+        log.info("S3 storage disabled — S3_BUCKET_NAME not set")
+except Exception as exc:
+    log.warning("S3 storage unavailable: %s", exc)
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -73,6 +91,9 @@ app.add_middleware(
 
 # Single shared analyser instance (model is cached after first load)
 _analyser = DeviceAnalyser()
+
+# AWS Lambda handler (used by API Gateway → Lambda integration)
+handler = Mangum(app, lifespan="off")
 
 
 # ---------------------------------------------------------------------------
@@ -144,6 +165,18 @@ def analyse_device(device: DeviceInput) -> AnalysisResult:
             result.final_action,
             result.llm_result.llm_available,
         )
+
+        # Persist analysis result to S3 when storage is available
+        if _s3_storage:
+            try:
+                s3_key = _s3_storage.store_analysis_result(
+                    asset_id=device.asset_id,
+                    result=result.model_dump(),
+                )
+                log.info("Analysis result stored in S3: %s", s3_key)
+            except Exception as s3_exc:
+                log.warning("Failed to store result in S3: %s", s3_exc)
+
         return result
     except FileNotFoundError as exc:
         log.error("Model artifact missing for asset %s: %s", device.asset_id, exc)

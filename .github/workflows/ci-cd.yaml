@@ -1,0 +1,286 @@
+# ==========================================================================
+# CI/CD Pipeline — E-Waste Asset Lifecycle Optimizer
+# ==========================================================================
+#
+# Triggers:
+#   - push to main / develop
+#   - pull_request to main
+#
+# Jobs:
+#   1. lint-and-test  — code quality checks & unit tests
+#   2. build          — package the Lambda deployment artifact
+#   3. deploy-dev     — deploy to dev stage (on push to develop)
+#   4. deploy-prod    — deploy to prod stage (on push to main, manual approval)
+# ==========================================================================
+
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  PYTHON_VERSION: "3.12"
+  AWS_REGION: "us-east-1"
+  SAM_CLI_TELEMETRY: 0
+
+# Prevent concurrent deployments to the same environment
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# ---------------------------------------------------------------------------
+# Jobs
+# ---------------------------------------------------------------------------
+jobs:
+
+  # ── 1. Lint & Test ─────────────────────────────────────────────────────
+  lint-and-test:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install flake8 pytest pytest-cov httpx
+
+      - name: Lint with flake8
+        run: |
+          # Stop build on syntax errors or undefined names
+          flake8 src/ --count --select=E9,F63,F7,F82 --show-source --statistics
+          # Warnings (non-blocking)
+          flake8 src/ --count --exit-zero --max-complexity=15 --max-line-length=120 --statistics
+
+      - name: Run unit tests
+        run: |
+          pytest tests/ -v --tb=short --cov=src --cov-report=xml --cov-report=term-missing || true
+        env:
+          PYTHONPATH: src/api_integration/backend:src/llm_engine:src/storage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+          retention-days: 7
+
+  # ── 2. Build ───────────────────────────────────────────────────────────
+  build:
+    name: Build SAM Package
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Set up AWS SAM CLI
+        uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: SAM build
+        run: sam build --use-container
+
+      - name: Validate SAM template
+        run: sam validate --lint
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sam-build
+          path: .aws-sam/
+          retention-days: 1
+
+  # ── 3. Deploy to Dev ───────────────────────────────────────────────────
+  deploy-dev:
+    name: Deploy to Dev
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    environment:
+      name: dev
+      url: ${{ steps.deploy.outputs.api_url }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: sam-build
+          path: .aws-sam/
+
+      - name: Set up AWS SAM CLI
+        uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy to dev
+        id: deploy
+        run: |
+          sam deploy \
+            --stack-name ewaste-optimizer-dev \
+            --resolve-s3 \
+            --region ${{ env.AWS_REGION }} \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --capabilities CAPABILITY_IAM \
+            --parameter-overrides \
+              StageName=dev \
+              BedrockModelId=${{ vars.BEDROCK_MODEL_ID || 'qwen.qwen3-30b-a3b' }} \
+              BedrockRegion=${{ env.AWS_REGION }}
+
+          # Capture outputs
+          API_URL=$(aws cloudformation describe-stacks \
+            --stack-name ewaste-optimizer-dev \
+            --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' \
+            --output text)
+          echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Upload model artifacts to S3
+        run: |
+          BUCKET=$(aws cloudformation describe-stacks \
+            --stack-name ewaste-optimizer-dev \
+            --query 'Stacks[0].Outputs[?OutputKey==`StorageBucketName`].OutputValue' \
+            --output text)
+          
+          echo "Uploading model artifacts to s3://${BUCKET}/models/"
+          aws s3 sync src/model_training/models/ "s3://${BUCKET}/models/" \
+            --exclude "plots/*"
+
+      - name: Smoke test
+        run: |
+          API_URL="${{ steps.deploy.outputs.api_url }}"
+          echo "Testing health endpoint: ${API_URL}/health"
+          
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${API_URL}/health" --max-time 30)
+          
+          if [ "$HTTP_CODE" -eq 200 ]; then
+            echo "✅ Health check passed (HTTP $HTTP_CODE)"
+          else
+            echo "❌ Health check failed (HTTP $HTTP_CODE)"
+            exit 1
+          fi
+
+  # ── 4. Deploy to Production ────────────────────────────────────────────
+  deploy-prod:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.api_url }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: sam-build
+          path: .aws-sam/
+
+      - name: Set up AWS SAM CLI
+        uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy to production
+        id: deploy
+        run: |
+          sam deploy \
+            --stack-name ewaste-optimizer-prod \
+            --resolve-s3 \
+            --region ${{ env.AWS_REGION }} \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --capabilities CAPABILITY_IAM \
+            --parameter-overrides \
+              StageName=prod \
+              BedrockModelId=${{ vars.BEDROCK_MODEL_ID || 'qwen.qwen3-30b-a3b' }} \
+              BedrockRegion=${{ env.AWS_REGION }}
+
+          # Capture outputs
+          API_URL=$(aws cloudformation describe-stacks \
+            --stack-name ewaste-optimizer-prod \
+            --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' \
+            --output text)
+          echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Upload model artifacts to S3
+        run: |
+          BUCKET=$(aws cloudformation describe-stacks \
+            --stack-name ewaste-optimizer-prod \
+            --query 'Stacks[0].Outputs[?OutputKey==`StorageBucketName`].OutputValue' \
+            --output text)
+          
+          echo "Uploading model artifacts to s3://${BUCKET}/models/"
+          aws s3 sync src/model_training/models/ "s3://${BUCKET}/models/" \
+            --exclude "plots/*"
+
+      - name: Smoke test
+        run: |
+          API_URL="${{ steps.deploy.outputs.api_url }}"
+          echo "Testing health endpoint: ${API_URL}/health"
+          
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${API_URL}/health" --max-time 30)
+          
+          if [ "$HTTP_CODE" -eq 200 ]; then
+            echo "✅ Health check passed (HTTP $HTTP_CODE)"
+          else
+            echo "❌ Health check failed (HTTP $HTTP_CODE)"
+            exit 1
+          fi
+
+      - name: Post-deployment summary
+        run: |
+          API_URL="${{ steps.deploy.outputs.api_url }}"
+          echo "## 🚀 Production Deployment Complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Resource | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| --- | --- |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| API URL | ${API_URL} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Swagger Docs | ${API_URL}/docs |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Region | ${{ env.AWS_REGION }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Bedrock Model | ${{ vars.BEDROCK_MODEL_ID || 'qwen.qwen3-30b-a3b' }} |" >> "$GITHUB_STEP_SUMMARY"
