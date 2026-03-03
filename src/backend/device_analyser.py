@@ -45,7 +45,7 @@ import pandas as pd
 
 # ── Resolve sibling package paths ────────────────────────────────────────────
 _BACKEND_DIR    = Path(__file__).parent
-_SRC_DIR        = _BACKEND_DIR.parent.parent          # src/
+_SRC_DIR        = _BACKEND_DIR.parent                  # src/
 _LLM_ENGINE_DIR = _SRC_DIR / "llm_engine"
 _MODEL_DIR      = _SRC_DIR / "model_training" / "models"
 
