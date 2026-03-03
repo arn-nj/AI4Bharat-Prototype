@@ -1,139 +1,186 @@
-# API Integration — `src/api_integration/`
+# Intelligent E-Waste & Asset Lifecycle Optimizer
 
-This folder contains the full runtime stack for the **E-Waste Asset Lifecycle Optimizer**: a FastAPI backend that runs the ML + Policy + LLM pipeline, a Streamlit demo frontend, and a PowerShell launcher that starts both with a single command.
+A decision-support system that combines **ML risk scoring**, **deterministic policy rules**, and **Amazon Bedrock LLM** to recommend lifecycle actions (Redeploy / Repair / Refurbish / Resale / Recycle) for IT assets.
+
+| Environment | Frontend | API |
+|---|---|---|
+| **Production** | https://d1mf9ava5cnnbs.cloudfront.net | https://jh4ppmtagk.execute-api.us-east-1.amazonaws.com/prod |
+| **Dev** | https://d38pk4y15auu3k.cloudfront.net | https://pacyjst474.execute-api.us-east-1.amazonaws.com/dev |
+
+---
+
+## Architecture
+
+```
+src/
+├── backend/            FastAPI — ML + Policy + LLM pipeline (Lambda container)
+├── frontend/           React 18 + Vite 5 + Tailwind — static site on S3+CloudFront
+├── llm_engine/         Amazon Bedrock client + prompt builders
+├── model_training/     Training data, Jupyter notebooks, trained model artifacts
+└── storage/            S3 helper (model artifacts, compliance docs)
+
+scripts/
+├── deploy.sh           Full-stack local deploy (sam build → SAM deploy → npm build → S3 sync)
+└── start.ps1           Local dev launcher (FastAPI + Vite dev server)
+```
+
+**AWS stack:**
+
+```
+Browser → CloudFront → S3 (React build)
+Browser → API Gateway → Lambda (FastAPI/Mangum) → Amazon Bedrock
+                                                 → S3 (model artifacts)
+```
 
 ---
 
 ## Folder structure
 
 ```
-api_integration/
-├── start.ps1          PowerShell launcher — starts backend and frontend together
-├── backend/
-│   ├── main.py                FastAPI application — routes, CORS, startup
-│   ├── models.py              Pydantic request/response models
-│   ├── device_analyser.py     Pipeline orchestrator — ML → Policy → LLM
-│   └── test_analyse_device.py 10-scenario end-to-end test script
-└── frontend/
-    └── app.py                 Streamlit demo UI
+.
+├── Dockerfile                    Lambda container image for the backend
+├── template.yaml                 AWS SAM template (Lambda + API GW + S3 + CloudFront)
+├── samconfig.toml                SAM deploy defaults
+├── requirements.txt              Python dependencies (backend + training)
+├── .github/
+│   └── workflows/ci-cd.yaml     GitHub Actions: lint → deploy-dev / deploy-prod
+├── scripts/
+│   ├── deploy.sh                 One-command full-stack deploy script
+│   ├── start.ps1                 Local dev launcher (Windows)
+│   └── upload_models_to_s3.py   Standalone model artifact uploader
+├── src/
+│   ├── backend/
+│   │   ├── main.py               FastAPI app, routes, CORS, Mangum handler
+│   │   ├── models.py             Pydantic request/response schemas
+│   │   ├── device_analyser.py    Pipeline orchestrator: ML → Policy → LLM
+│   │   └── test_analyse_device.py  10-scenario integration test script
+│   ├── frontend/
+│   │   ├── src/                  React components + API client
+│   │   ├── vite.config.ts
+│   │   └── package.json
+│   ├── llm_engine/
+│   │   ├── llm.py                Amazon Bedrock client + four caller methods
+│   │   └── prompts.py            Prompt builders + fallback templates
+│   ├── model_training/
+│   │   ├── train_model.py        Gradient boosting model training
+│   │   ├── models/               model artifacts (joblib + metadata JSON)
+│   │   └── *.ipynb               EDA, data quality, inference testing notebooks
+│   └── storage/
+│       └── s3_storage.py         S3 get/put helpers
+└── documents/
+    ├── requirements.md
+    ├── design.md
+    └── ...
 ```
 
 ---
 
-## Prerequisites
+## Local development
 
-Before starting the stack, make sure the following are in place.
+### Prerequisites
 
-### 1. Python virtual environment
+| Tool | Version |
+|---|---|
+| Python | 3.12 |
+| Node.js | 20 |
+| Docker | any recent |
+| AWS SAM CLI | latest |
+| AWS credentials | configured (`aws configure` or env vars) |
 
-Create and activate the project venv from the **repo root**:
+### 1 — Python virtual environment
 
-```powershell
+```bash
 python -m venv .venv
+# Windows
 .venv\Scripts\Activate.ps1
+# Linux/macOS
+source .venv/bin/activate
+
 pip install -r requirements.txt
 ```
 
-### 2. Trained ML model
+### 2 — Train the ML model (first time only)
 
-The backend requires a trained model artifact. Run the training script once:
-
-```powershell
+```bash
 python src/model_training/train_model.py
 ```
 
-This produces two files consumed at startup:
+Produces two files used at runtime:
 
-| File | Location |
+| File | Path |
 |---|---|
 | `risk_label_model.joblib` | `src/model_training/models/` |
 | `model_metadata.json` | `src/model_training/models/` |
 
-### 3. Environment variables (Azure OpenAI)
+### 3 — Environment variables
 
-Copy the example env file and fill in your credentials:
+Create a `.env` file at the repo root:
+
+```bash
+# Amazon Bedrock (required for LLM stage)
+AWS_REGION=us-east-1
+BEDROCK_MODEL_ID=qwen.qwen3-30b-a3b
+
+# S3 bucket for model artifacts (optional — falls back to local files)
+S3_BUCKET_NAME=ewaste-asset-optimizer-dev-992332682921
+```
+
+> If Bedrock credentials are missing the pipeline falls back to deterministic templates — ML + Policy stages continue to work normally.
+
+### 4 — Start the full local stack
 
 ```powershell
-Copy-Item .env.example .env
+# Windows — opens two terminal windows
+.\scripts\start.ps1
+
+# Custom ports
+.\scripts\start.ps1 -Port 9000 -FrontendPort 5174
 ```
 
-Edit `.env` at the repo root:
-
-```
-AZURE_OPENAI_ENDPOINT=https://<your-resource>.openai.azure.com
-AZURE_OPENAI_API_KEY=<your-api-key>
-AZURE_OPENAI_API_VERSION=2024-02-01        # optional — this is the default
-AZURE_CHAT_DEPLOYMENT_NAME=gpt-4o-mini
-AZURE_EMBEDDING_DEPLOYMENT_NAME=text-embedding-ada-002
-```
-
-> The `.env` file is gitignored. Never commit credentials to source control.
-
-If the LLM credentials are missing or incorrect the pipeline will fall back to deterministic templates for the explanation and ITSM task — the rest of the pipeline (ML + policy) continues to work normally.
-
----
-
-## Starting the stack
-
-`start.ps1` starts both processes in separate terminal windows and prints a summary of all URLs.
-
-```powershell
-# From the repo root (or any directory)
-.\src\api_integration\start.ps1
-```
-
-**Default URLs after startup:**
-
-| Service | URL |
+| Service | Default URL |
 |---|---|
 | FastAPI backend | http://localhost:8000 |
-| Swagger UI (interactive API docs) | http://localhost:8000/docs |
-| ReDoc | http://localhost:8000/redoc |
-| Streamlit frontend | http://localhost:8501 |
+| Swagger UI | http://localhost:8000/docs |
+| React frontend (Vite) | http://localhost:5173 |
 
-### Optional parameters
+**Or start manually:**
 
-| Parameter | Default | Description |
-|---|---|---|
-| `-Port <int>` | `8000` | Backend port |
-| `-FrontendPort <int>` | `8501` | Streamlit port |
-| `-NoReload` | off | Disables uvicorn `--reload` (use in production) |
+```bash
+# Backend
+cd src/backend && uvicorn main:app --reload --port 8000
 
-```powershell
-# Example — custom ports, no hot-reload
-.\src\api_integration\start.ps1 -Port 9000 -FrontendPort 8502 -NoReload
+# Frontend (separate terminal)
+cd src/frontend && VITE_BACKEND_URL=http://localhost:8000 npm run dev
 ```
-
-To stop both services, close their respective terminal windows.
 
 ---
 
-## Backend — `backend/`
+## API reference
 
-The backend is a **FastAPI** application that exposes a single analysis endpoint. A shared `DeviceAnalyser` instance is created at startup, caching the ML model on first use.
+### `GET /health`
 
-### API routes
+```json
+{ "status": "ok", "service": "asset-lifecycle-optimizer" }
+```
 
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/health` | Liveness probe — returns `{"status": "ok"}` |
-| `GET` | `/model_info` | ML model metadata (version, metrics, feature lists) |
-| `POST` | `/analyse_device` | Full pipeline analysis — see below |
+### `GET /model_info`
+
+Returns ML model metadata: version, training date, AUC-ROC, feature list.
 
 ### `POST /analyse_device`
 
-Accepts a `DeviceInput` JSON body and returns a complete `AnalysisResult`.
+Runs the full 4-stage pipeline and returns a complete analysis.
 
-**Pipeline stages executed per request:**
+**Pipeline stages:**
 
-| Stage | Module | Description |
-|---|---|---|
-| 1. Feature engineering | `device_analyser.py` | Derives `incident_rate_per_month`, `critical_incident_ratio`, `battery_degradation_rate`, `thermal_events_per_month` |
-| 2. ML inference | `device_analyser.py` | Sklearn pipeline predicts `high` / `medium` / `low` risk label and class probabilities. Skipped when `data_completeness < 0.6`. |
-| 3. Policy engine | `device_analyser.py` | Deterministic threshold rules map risk level to a lifecycle action: `RECYCLE` / `REPAIR` / `REFURBISH` / `RESALE` / `REDEPLOY` |
-| 4. LLM engine | `src/llm_engine/llm.py` | Generates a ≤120-word explanation and a structured ITSM task JSON. Falls back to templates on timeout or missing credentials. |
+| # | Stage | Module | Description |
+|---|---|---|---|
+| 1 | Feature engineering | `device_analyser.py` | Derives rates: `incident_rate_per_month`, `critical_incident_ratio`, `battery_degradation_rate`, `thermal_events_per_month` |
+| 2 | ML inference | `device_analyser.py` | Gradient boosting predicts `high`/`medium`/`low` + class probabilities. Skipped when `data_completeness < 0.6`. |
+| 3 | Policy engine | `device_analyser.py` | Deterministic threshold rules map risk to lifecycle action |
+| 4 | LLM engine | `llm_engine/llm.py` | Bedrock generates ≤120-word explanation + structured ITSM task JSON. Falls back to templates on timeout. |
 
-**Policy rules (Stage 3):**
+**Policy rules:**
 
 | Rule | Condition | Classification |
 |---|---|---|
@@ -141,7 +188,6 @@ Accepts a `DeviceInput` JSON body and returns a complete `AnalysisResult`.
 | `thermal_threshold` | `thermal_events_count ≥ 10` | High |
 | `smart_sectors_threshold` | `smart_sectors_reallocated ≥ 50` | High |
 | *(partial)* | `age ≥ 30 AND tickets ≥ 3` OR `thermal ≥ 5` OR `smart ≥ 25` | Medium |
-| *(none)* | No criteria met | Low |
 
 **Action mapping:**
 
@@ -153,101 +199,108 @@ Accepts a `DeviceInput` JSON body and returns a complete `AnalysisResult`.
 | `risk_score < 0.30` | `REDEPLOY` |
 | else | `RESALE` |
 
-*Repairable* = thermal breach OR SMART breach OR `overheating_issues == "True"`
-
-### `DeviceInput` request fields
-
-**Identity & context**
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `asset_id` | `str` | Yes | Unique asset identifier |
-| `device_type` | `str` | Yes | `Laptop` \| `Server` \| `Desktop` |
-| `brand` | `str` | Yes | Hardware manufacturer |
-| `department` | `str` | Yes | Owning business unit |
-| `region` | `str` | Yes | Geographic region |
-| `usage_type` | `str` | default `Standard` | `Standard` \| `Heavy` \| `Light` |
-| `os` | `str` | default `Windows 11` | Operating system |
-
-**Age & manufacture**
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `age_in_months` | `int ≥ 0` | Yes | Asset age |
-| `model_year` | `int ≥ 2000` | Yes | Manufacturing year |
-
-**Hardware health**
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `battery_health_percent` | `float 0–100` | Yes | Current battery health |
-| `battery_cycles` | `int ≥ 0` | Yes | Charge/discharge cycles |
-| `smart_sectors_reallocated` | `int ≥ 0` | Yes | SMART drive health indicator |
-| `thermal_events_count` | `int ≥ 0` | Yes | Overheating events in last 90 days |
-| `overheating_issues` | `str` | default `False` | `"True"` \| `"False"` |
-| `daily_usage_hours` | `float 0–24` | default `8.0` | Average daily usage |
-| `performance_rating` | `int 1–5` | Yes | Subjective performance rating |
-
-**Support tickets (90-day window)**
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `total_incidents` | `int ≥ 0` | Yes | Total tickets |
-| `critical_incidents` | `int ≥ 0` | default `0` | P1/critical tickets |
-| `high_incidents` | `int ≥ 0` | default `0` | High-severity tickets |
-| `medium_incidents` | `int ≥ 0` | default `0` | Medium-severity tickets |
-| `low_incidents` | `int ≥ 0` | default `0` | Low-severity tickets |
-| `avg_resolution_time_hours` | `float ≥ 0` | default `24.0` | Average resolution time |
-
-**Data quality**
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `data_completeness` | `float 0–1` | default `1.0` | Fraction of telemetry fields populated. Below `0.6` triggers the policy-only path. |
-
-### `AnalysisResult` response fields
+**Request fields (`DeviceInput`):**
 
 | Field | Type | Description |
 |---|---|---|
-| `asset_id` | `str` | Echoed from request |
-| `final_action` | `str` | Lifecycle action from policy engine |
-| `confidence_score` | `float` | Max ML class probability, or `0.5` on policy-only path |
-| `ml_result` | `MLResult` | Risk label, score, confidence band, class probabilities |
-| `policy_result` | `PolicyResult` | Classification, triggered rules, supporting signals |
-| `llm_result` | `LLMResult` | Explanation text, ITSM task JSON, `llm_available` flag |
+| `asset_id` | `str` | Unique asset identifier |
+| `device_type` | `str` | `Laptop` \| `Server` \| `Desktop` |
+| `brand`, `department`, `region` | `str` | Asset metadata |
+| `age_in_months` | `int ≥ 0` | Asset age |
+| `battery_health_percent` | `float 0–100` | Current battery health |
+| `battery_cycles` | `int ≥ 0` | Charge cycles |
+| `smart_sectors_reallocated` | `int ≥ 0` | SMART drive indicator |
+| `thermal_events_count` | `int ≥ 0` | Overheating events (90-day window) |
+| `total_incidents` | `int ≥ 0` | Support tickets (90-day window) |
+| `critical_incidents` | `int ≥ 0` | P1 tickets |
+| `performance_rating` | `int 1–5` | Subjective performance score |
+| `data_completeness` | `float 0–1` | Below `0.6` → policy-only path |
 
-### End-to-end test script
+**Response fields (`AnalysisResult`):**
 
-`test_analyse_device.py` runs 10 hand-crafted scenarios against the live API and prints structured results for each, followed by a pass/fail summary table.
+| Field | Description |
+|---|---|
+| `final_action` | Lifecycle action: `RECYCLE` / `REPAIR` / `REFURBISH` / `RESALE` / `REDEPLOY` |
+| `confidence_score` | Max ML class probability, or `0.5` on policy-only path |
+| `ml_result` | Risk label, score, confidence band, class probabilities |
+| `policy_result` | Classification, triggered rules, supporting signals |
+| `llm_result` | Explanation text, ITSM task JSON, `llm_available` flag |
 
-```powershell
-# Backend must be running first
-cd src/api_integration/backend
+### Integration test
+
+Runs 10 hand-crafted scenarios against the live API:
+
+```bash
+cd src/backend
 python test_analyse_device.py
-
-# Optional flags
-python test_analyse_device.py --url http://myserver:8000
+python test_analyse_device.py --url https://pacyjst474.execute-api.us-east-1.amazonaws.com/dev
 python test_analyse_device.py --stop-on-error
 ```
 
 ---
 
-## Frontend — `frontend/`
+## Frontend
 
-The frontend is a **Streamlit** demo UI that calls the backend's `POST /analyse_device` endpoint.
+The React+Vite frontend (served from CloudFront + S3) provides:
 
-### Features
+- **Scenario selector** — 10 preset device scenarios matching the integration test suite
+- **Device characteristics** — all input fields as two-column tables
+- **Analysis pipeline** — calls `POST /analyse_device` with a 90s timeout
+- **Results in three tabs:** ML Model · Policy Engine · LLM Engine
+- **Summary banner** — final action (colour-coded), confidence score, expected match indicator
 
-- **Scenario selector** — dropdown of the same 10 preset device scenarios used in `test_analyse_device.py`
-- **Device characteristics** — all input fields displayed as two side-by-side tables (Identity & Usage / Hardware Health & Incidents)
-- **Start Analysis button** — disabled with an info message when the backend is unreachable
-- **Results in three labelled tabs:**
-  - **ML Model** — risk label, risk score, confidence band, class probabilities, model version
-  - **Policy Engine** — classification, recommended action, triggered rule IDs, supporting signals
-  - **LLM Engine** — recommendation explanation, full ITSM task (title, priority, team, description, checklist)
-- **Result banner** — final lifecycle action (colour-coded), confidence score, and match against expected action
+---
 
-### The 10 preset scenarios
+## Deployment
+
+### One-command deploy (local)
+
+```bash
+# Deploy dev
+bash scripts/deploy.sh dev
+
+# Deploy prod
+bash scripts/deploy.sh prod
+```
+
+The script runs: `sam build` → `sam deploy` → model artifact sync → `npm ci && npm run build` → `s3 sync` → CloudFront invalidation → smoke test.
+
+### CI/CD (GitHub Actions)
+
+| Branch | Trigger | Job |
+|---|---|---|
+| `develop` | push | `deploy-dev` |
+| `main` | push | `deploy-prod` |
+| any | PR to main | `lint-and-test` only |
+
+Required GitHub secrets:
+
+| Secret | Value |
+|---|---|
+| `AWS_ACCESS_KEY_ID` | IAM access key |
+| `AWS_SECRET_ACCESS_KEY` | IAM secret key |
+
+Optional Actions variable: `BEDROCK_MODEL_ID` (defaults to `qwen.qwen3-30b-a3b`).
+
+### Manual SAM deploy
+
+```bash
+sam build --use-container
+
+sam deploy \
+  --stack-name ewaste-optimizer-dev \
+  --resolve-s3 \
+  --resolve-image-repos \
+  --capabilities CAPABILITY_IAM \
+  --parameter-overrides \
+    StageName=dev \
+    BedrockModelId=qwen.qwen3-30b-a3b \
+    BedrockRegion=us-east-1
+```
+
+---
+
+## The 10 preset scenarios
 
 | # | Name | Expected action | Notable characteristic |
 |---|---|---|---|
@@ -259,55 +312,5 @@ The frontend is a **Streamlit** demo UI that calls the backend's `POST /analyse_
 | 6 | Borderline medium/high (~0.54) | REFURBISH | Right at 0.54 threshold |
 | 7 | Borderline low/medium (~0.35) | RESALE | Right at 0.35 threshold |
 | 8 | Old but well-maintained | RESALE | Age 60m but healthy hardware |
-| 9 | Partial telemetry (completeness=0.45) | policy-only | ML skipped, policy engine runs alone |
+| 9 | Partial telemetry (completeness=0.45) | policy-only | ML skipped, policy engine only |
 | 10 | High incidents, young device | REPAIR | Young but SMART + thermal breach |
-
----
-
-## Logging
-
-Both processes emit structured log lines to their respective terminal windows.
-
-**Backend terminal (uvicorn):**
-
-```
-16:19:41 [INFO]  device_analyser — [TEST-001] Starting analysis pipeline ...
-16:19:41 [INFO]  device_analyser — [TEST-001] ML result — label=low  score=0.027
-16:19:41 [INFO]  device_analyser — [TEST-001] Policy result — action=REDEPLOY
-16:19:41 [INFO]  device_analyser — [TEST-001] Calling LLM: generate_recommendation_explanation
-16:19:42 [INFO]  device_analyser — [TEST-001] LLM explanation generated successfully
-16:19:42 [INFO]  backend         — Request complete — asset_id=TEST-001  final_action=REDEPLOY  llm_available=True
-```
-
-**Frontend terminal (streamlit):**
-
-```
-16:19:40 [INFO]  frontend — Starting analysis for scenario '1. Brand-new healthy laptop' ...
-16:19:40 [DEBUG] frontend — POST http://localhost:8000/analyse_device  asset_id=TEST-001
-16:19:42 [INFO]  frontend — Analysis complete — final_action=REDEPLOY  confidence=0.932  llm_available=True
-```
-
----
-
-## File dependency map
-
-```
-start.ps1
-  └── launches  backend/main.py      (uvicorn)
-  └── launches  frontend/app.py      (streamlit)
-
-backend/main.py
-  └── imports   DeviceAnalyser       ← backend/device_analyser.py
-  └── imports   DeviceInput,
-                AnalysisResult       ← backend/models.py
-
-backend/device_analyser.py
-  └── imports   MLResult, PolicyResult,
-                LLMResult, AnalysisResult  ← backend/models.py
-  └── imports   LLMOpenAI                  ← src/llm_engine/llm.py
-  └── loads     risk_label_model.joblib    ← src/model_training/models/
-  └── loads     model_metadata.json        ← src/model_training/models/
-
-frontend/app.py
-  └── calls     POST /analyse_device       → backend/main.py (HTTP)
-```

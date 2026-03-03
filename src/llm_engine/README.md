@@ -4,7 +4,7 @@ This folder contains the language model layer of the E-Waste Asset Lifecycle Opt
 
 | File | Role |
 |---|---|
-| `llm.py` | Azure OpenAI client wrapper + four purpose-specific caller methods |
+| `llm.py` | Amazon Bedrock client wrapper + four purpose-specific caller methods |
 | `prompts.py` | Prompt builders for each GenAI use-case + fallback templates |
 
 The LLM sits at **Stage 4** of the decision pipeline. It does **not** make lifecycle decisions — those are made by the ML model and policy engine. The LLM only converts already-made decisions into human-readable text, structured tasks, and answers.
@@ -15,12 +15,23 @@ The LLM sits at **Stage 4** of the decision pipeline. It does **not** make lifec
 
 ### What it does
 
-`LLMOpenAI` is the single entry point for all LLM calls. It handles:
+`LLMOpenAI` is the single entry point for all LLM calls. The class name is kept as `LLMOpenAI` for backward compatibility with existing imports in `device_analyser.py`. It handles:
 
-- **Connection** — reads `azure_oai_endpoint`, `azure_oai_key`, and `azure_oai_version` from a `.env` file and initialises the Azure OpenAI SDK client.
-- **Two generic transport methods** — `generic_llm()` uses the SDK (preferred), `generic_llm_rest()` uses raw HTTP. Both accept a `system_message` and a `user_message` string and return the model's response as a plain string.
+- **Connection** — reads `AWS_REGION` and `BEDROCK_MODEL_ID` from the process environment (or a `.env` file at the repo root) and initialises a `boto3` `bedrock-runtime` client. When deployed on Lambda the IAM execution role provides credentials automatically; locally, set `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`.
+- **Two generic transport methods** — `generic_llm()` uses the Bedrock Converse API (preferred), `generic_llm_rest()` uses the lower-level `InvokeModel` API. Both accept a `system_message` and a `question`/`query` string and return the model's response as a plain string.
 - **Four purpose-specific methods** — each one calls the matching prompt builder from `prompts.py`, invokes `generic_llm()`, and handles errors gracefully. If the LLM takes longer than **10 seconds** or throws any exception, the method falls back to a deterministic template rather than failing the whole request.
-- **Timeout enforcement** — a `_LLM_TIMEOUT_SECONDS = 10` constant is checked after every call. This matches the design requirement for graceful degradation when Bedrock / Azure OpenAI is slow or unavailable.
+- **Timeout enforcement** — a `_LLM_TIMEOUT_SECONDS = 10` constant governs the botocore read timeout. This matches the design requirement for graceful degradation when Bedrock is slow or unavailable.
+
+### Configuration
+
+| Variable | Default | Description |
+|---|---|---|
+| `AWS_REGION` | `us-east-1` | Bedrock service region |
+| `BEDROCK_MODEL_ID` | `qwen.qwen3-30b-a3b` | Bedrock model identifier |
+| `AWS_ACCESS_KEY_ID` | *(IAM role on Lambda)* | AWS access key — only needed locally |
+| `AWS_SECRET_ACCESS_KEY` | *(IAM role on Lambda)* | AWS secret key — only needed locally |
+
+> On Lambda the execution role (`AI4BhartLambdaExecutionRole`) automatically grants `bedrock:InvokeModel` and `bedrock:Converse` — no `.env` credentials are required.
 
 ### Purpose-specific methods at a glance
 
@@ -213,12 +224,15 @@ These ensure the system always produces a usable output even when the LLM servic
 
 ---
 
-## Environment Variables Required
+## Environment Variables
 
-Add these to a `.env` file at the project root:
+When deployed on Lambda, no `.env` credentials are needed — the IAM execution role provides access to Bedrock automatically. For local development, set the following in a `.env` file at the project root or as shell exports:
 
 ```
-azure_oai_endpoint=<your Azure OpenAI endpoint URL>
-azure_oai_key=<your API key>
-azure_oai_version=<API version, e.g. 2024-02-01>
+AWS_REGION=us-east-1
+BEDROCK_MODEL_ID=qwen.qwen3-30b-a3b
+AWS_ACCESS_KEY_ID=<your-access-key-id>
+AWS_SECRET_ACCESS_KEY=<your-secret-access-key>
 ```
+
+> `AWS_REGION` and `BEDROCK_MODEL_ID` have sensible defaults and can be omitted if you are using the standard model in `us-east-1`. Only the key pair is strictly required for local dev; on Lambda, omit both key variables.
