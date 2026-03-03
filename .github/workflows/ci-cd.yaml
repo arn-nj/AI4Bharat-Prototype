@@ -67,7 +67,7 @@ jobs:
         run: |
           pytest tests/ -v --tb=short --cov=src --cov-report=xml --cov-report=term-missing || true
         env:
-          PYTHONPATH: src/api_integration/backend:src/llm_engine:src/storage
+          PYTHONPATH: src/backend:src/llm_engine:src/storage
 
       - name: Upload coverage report
         if: always()
@@ -148,12 +148,20 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Deploy to dev
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: src/frontend/package-lock.json
+
+      - name: Deploy backend to dev
         id: deploy
         run: |
           sam deploy \
             --stack-name ewaste-optimizer-dev \
             --resolve-s3 \
+            --resolve-image-repos \
             --region ${{ env.AWS_REGION }} \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
@@ -163,12 +171,44 @@ jobs:
               BedrockModelId=${{ vars.BEDROCK_MODEL_ID || 'qwen.qwen3-30b-a3b' }} \
               BedrockRegion=${{ env.AWS_REGION }}
 
-          # Capture outputs
           API_URL=$(aws cloudformation describe-stacks \
             --stack-name ewaste-optimizer-dev \
             --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' \
             --output text)
+          FRONTEND_BUCKET=$(aws cloudformation describe-stacks \
+            --stack-name ewaste-optimizer-dev \
+            --query 'Stacks[0].Outputs[?OutputKey==`FrontendBucketName`].OutputValue' \
+            --output text)
+          CF_DIST_ID=$(aws cloudformation describe-stacks \
+            --stack-name ewaste-optimizer-dev \
+            --query 'Stacks[0].Outputs[?OutputKey==`FrontendDistributionId`].OutputValue' \
+            --output text)
+          FRONTEND_URL=$(aws cloudformation describe-stacks \
+            --stack-name ewaste-optimizer-dev \
+            --query 'Stacks[0].Outputs[?OutputKey==`FrontendUrl`].OutputValue' \
+            --output text)
           echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
+          echo "frontend_bucket=$FRONTEND_BUCKET" >> "$GITHUB_OUTPUT"
+          echo "cf_dist_id=$CF_DIST_ID" >> "$GITHUB_OUTPUT"
+          echo "frontend_url=$FRONTEND_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Build React frontend
+        working-directory: src/frontend
+        env:
+          VITE_BACKEND_URL: ${{ steps.deploy.outputs.api_url }}
+        run: |
+          npm ci
+          npm run build
+
+      - name: Deploy frontend to S3 + invalidate CloudFront
+        run: |
+          aws s3 sync src/frontend/dist/ \
+            s3://${{ steps.deploy.outputs.frontend_bucket }}/ \
+            --delete --region ${{ env.AWS_REGION }}
+
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ steps.deploy.outputs.cf_dist_id }} \
+            --paths "/*"
 
       - name: Upload model artifacts to S3
         run: |
@@ -226,12 +266,20 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Deploy to production
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: src/frontend/package-lock.json
+
+      - name: Deploy backend to production
         id: deploy
         run: |
           sam deploy \
             --stack-name ewaste-optimizer-prod \
             --resolve-s3 \
+            --resolve-image-repos \
             --region ${{ env.AWS_REGION }} \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
@@ -241,12 +289,44 @@ jobs:
               BedrockModelId=${{ vars.BEDROCK_MODEL_ID || 'qwen.qwen3-30b-a3b' }} \
               BedrockRegion=${{ env.AWS_REGION }}
 
-          # Capture outputs
           API_URL=$(aws cloudformation describe-stacks \
             --stack-name ewaste-optimizer-prod \
             --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' \
             --output text)
+          FRONTEND_BUCKET=$(aws cloudformation describe-stacks \
+            --stack-name ewaste-optimizer-prod \
+            --query 'Stacks[0].Outputs[?OutputKey==`FrontendBucketName`].OutputValue' \
+            --output text)
+          CF_DIST_ID=$(aws cloudformation describe-stacks \
+            --stack-name ewaste-optimizer-prod \
+            --query 'Stacks[0].Outputs[?OutputKey==`FrontendDistributionId`].OutputValue' \
+            --output text)
+          FRONTEND_URL=$(aws cloudformation describe-stacks \
+            --stack-name ewaste-optimizer-prod \
+            --query 'Stacks[0].Outputs[?OutputKey==`FrontendUrl`].OutputValue' \
+            --output text)
           echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
+          echo "frontend_bucket=$FRONTEND_BUCKET" >> "$GITHUB_OUTPUT"
+          echo "cf_dist_id=$CF_DIST_ID" >> "$GITHUB_OUTPUT"
+          echo "frontend_url=$FRONTEND_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Build React frontend
+        working-directory: src/frontend
+        env:
+          VITE_BACKEND_URL: ${{ steps.deploy.outputs.api_url }}
+        run: |
+          npm ci
+          npm run build
+
+      - name: Deploy frontend to S3 + invalidate CloudFront
+        run: |
+          aws s3 sync src/frontend/dist/ \
+            s3://${{ steps.deploy.outputs.frontend_bucket }}/ \
+            --delete --region ${{ env.AWS_REGION }}
+
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ steps.deploy.outputs.cf_dist_id }} \
+            --paths "/*"
 
       - name: Upload model artifacts to S3
         run: |
@@ -276,10 +356,12 @@ jobs:
       - name: Post-deployment summary
         run: |
           API_URL="${{ steps.deploy.outputs.api_url }}"
-          echo "## 🚀 Production Deployment Complete" >> "$GITHUB_STEP_SUMMARY"
+          FRONTEND_URL="${{ steps.deploy.outputs.frontend_url }}"
+          echo "## Production Deployment Complete" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| Resource | Value |" >> "$GITHUB_STEP_SUMMARY"
           echo "| --- | --- |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Frontend URL | ${FRONTEND_URL} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| API URL | ${API_URL} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Swagger Docs | ${API_URL}/docs |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Region | ${{ env.AWS_REGION }} |" >> "$GITHUB_STEP_SUMMARY"

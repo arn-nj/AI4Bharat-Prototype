@@ -38,13 +38,10 @@ Globals:
   Function:
     Timeout: 60
     MemorySize: 1024
-    Runtime: python3.12
-    Architectures:
-      - x86_64
     Environment:
       Variables:
         S3_BUCKET_NAME: !Ref StorageBucket
-        AWS_REGION_OVERRIDE: !Ref BedrockRegion
+        BEDROCK_REGION: !Ref BedrockRegion
         BEDROCK_MODEL_ID: !Ref BedrockModelId
         STAGE: !Ref StageName
 
@@ -111,11 +108,16 @@ Resources:
   # ── Lambda Function — FastAPI backend ──────────────────────────────────
   BackendFunction:
     Type: AWS::Serverless::Function
+    Metadata:
+      Dockerfile: Dockerfile
+      DockerContext: .
+      DockerTag: latest
     Properties:
       FunctionName: !Sub "ewaste-optimizer-api-${StageName}"
       Description: FastAPI backend for E-Waste Asset Lifecycle Optimizer
-      CodeUri: .
-      Handler: src.api_integration.backend.main.handler
+      PackageType: Image
+      Architectures:
+        - x86_64
       Timeout: 60
       MemorySize: 2048
       EphemeralStorage:
@@ -123,7 +125,7 @@ Resources:
       Environment:
         Variables:
           S3_BUCKET_NAME: !Ref StorageBucket
-          AWS_REGION: !Ref BedrockRegion
+          BEDROCK_REGION: !Ref BedrockRegion
           BEDROCK_MODEL_ID: !Ref BedrockModelId
           S3_MODEL_PREFIX: "models/"
           S3_RESULTS_PREFIX: "results/"
@@ -166,6 +168,84 @@ Resources:
         Project: EWasteAssetOptimizer
         Stage: !Ref StageName
 
+  # ── S3 Bucket for React frontend static files ───────────────────────
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "ewaste-frontend-${StageName}-${AWS::AccountId}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Project
+          Value: EWasteAssetOptimizer
+        - Key: Stage
+          Value: !Ref StageName
+
+  # ── CloudFront Origin Access Control ───────────────────────────────
+  FrontendBucketOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "ewaste-frontend-oac-${StageName}"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # ── Bucket policy — allows only CloudFront to read ─────────────────────
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${FrontendBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${FrontendDistribution}"
+
+  # ── CloudFront distribution ─────────────────────────────────────────
+  FrontendDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        DefaultRootObject: index.html
+        Origins:
+          - Id: S3Origin
+            DomainName: !GetAtt FrontendBucket.RegionalDomainName
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+            OriginAccessControlId: !GetAtt FrontendBucketOAC.Id
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6  # Managed-CachingOptimized
+          AllowedMethods: [GET, HEAD, OPTIONS]
+          CachedMethods: [GET, HEAD]
+        # SPA fallback — all 403/404 from S3 serve index.html
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 0
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 0
+        PriceClass: PriceClass_100
+      Tags:
+        - Key: Project
+          Value: EWasteAssetOptimizer
+        - Key: Stage
+          Value: !Ref StageName
+
   # ── CloudWatch Log Group ───────────────────────────────────────────────
   BackendLogGroup:
     Type: AWS::Logs::LogGroup
@@ -200,3 +280,15 @@ Outputs:
   FunctionName:
     Description: Lambda function name
     Value: !Ref BackendFunction
+
+  FrontendBucketName:
+    Description: S3 bucket name for the React frontend static files
+    Value: !Ref FrontendBucket
+
+  FrontendDistributionId:
+    Description: CloudFront distribution ID (use for cache invalidation after deploys)
+    Value: !Ref FrontendDistribution
+
+  FrontendUrl:
+    Description: React frontend URL (CloudFront HTTPS)
+    Value: !Sub "https://${FrontendDistribution.DomainName}"

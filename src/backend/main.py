@@ -9,7 +9,7 @@ Endpoints
   GET  /model_info       — Returns model metadata (version, metrics, features)
 
 Run locally:
-    cd src/api_integration/backend
+    cd src/backend
     uvicorn main:app --reload --port 8000
 
 Then open:
@@ -93,7 +93,14 @@ app.add_middleware(
 _analyser = DeviceAnalyser()
 
 # AWS Lambda handler (used by API Gateway → Lambda integration)
-handler = Mangum(app, lifespan="off")
+# api_gateway_base_path strips the stage prefix (e.g. /dev) that HTTP API v2
+# includes in the rawPath before passing it to FastAPI's router.
+_stage = os.getenv("STAGE", "")
+handler = Mangum(
+    app,
+    lifespan="off",
+    api_gateway_base_path=f"/{_stage}" if _stage else "/",
+)
 
 
 # ---------------------------------------------------------------------------

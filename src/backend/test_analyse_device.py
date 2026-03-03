@@ -12,7 +12,7 @@ AnalysisResult is printed in a structured, readable format.
 Usage
 -----
 1. Start the API server in a separate terminal:
-       cd src/api_integration/backend
+       cd src/backend
        uvicorn main:app --reload --port 8000
 
 2. Run this file:

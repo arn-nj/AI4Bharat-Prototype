@@ -64,7 +64,7 @@ class LLMOpenAI:
                 _DOTENV_PATH,
             )
 
-        self._region = os.getenv("AWS_REGION", "us-east-1")
+        self._region = os.getenv("BEDROCK_REGION") or os.getenv("AWS_REGION", "us-east-1")
         self._model_id = os.getenv("BEDROCK_MODEL_ID", "qwen.qwen3-30b-a3b")
 
         bedrock_config = Config(

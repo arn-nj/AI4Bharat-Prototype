@@ -1,8 +1,11 @@
+version = 0.1
+
 [default.deploy.parameters]
 stack_name = "ewaste-optimizer"
 resolve_s3 = true
+resolve_image_repos = true
 s3_prefix = "ewaste-optimizer"
 region = "us-east-1"
-confirm_changeset = true
+confirm_changeset = false
 capabilities = "CAPABILITY_IAM"
-parameter_overrides = "StageName=dev"
+parameter_overrides = "StageName=dev BedrockRegion=us-east-1"

@@ -1,19 +1,19 @@
-# start.ps1 — Start the FastAPI backend and the Streamlit frontend
-# ----------------------------------------------------------------
+# start.ps1 — Start the FastAPI backend and the React+Vite frontend (local dev)
+# -------------------------------------------------------------------------------
 # Run from anywhere; the script resolves its own location.
 #
 # Usage:
-#   .\src\api_integration\start.ps1
+#   .\scripts\start.ps1
 #
 # Optional parameters:
-#   -Port      <int>    Backend port        (default: 8000)
-#   -NoReload           Disable uvicorn --reload
-#   -FrontendPort <int> Streamlit server port (default: 8501)
+#   -Port         <int>    Backend port           (default: 8000)
+#   -NoReload              Disable uvicorn --reload
+#   -FrontendPort <int>    Vite dev server port   (default: 5173)
 
 param(
     [int]$Port          = 8000,
     [switch]$NoReload,
-    [int]$FrontendPort  = 8501
+    [int]$FrontendPort  = 5173
 )
 
 Set-StrictMode -Version Latest
@@ -22,11 +22,11 @@ $ErrorActionPreference = "Stop"
 # ---------------------------------------------------------------------------
 # Resolve paths relative to this script's location
 # ---------------------------------------------------------------------------
-$ScriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Definition
-$RepoRoot    = Resolve-Path (Join-Path (Join-Path $ScriptDir "..") "..")
-$BackendDir  = Join-Path $ScriptDir "backend"
-$FrontendDir = Join-Path $ScriptDir "frontend"
-$VenvPython  = Join-Path $RepoRoot ".venv\Scripts\python.exe"
+$ScriptDir    = Split-Path -Parent $MyInvocation.MyCommand.Definition
+$RepoRoot     = Resolve-Path (Join-Path $ScriptDir "..")
+$BackendDir   = Join-Path $RepoRoot "src\backend"
+$FrontendDir  = Join-Path $RepoRoot "src\frontend"
+$VenvPython   = Join-Path $RepoRoot ".venv\Scripts\python.exe"
 $VenvActivate = Join-Path $RepoRoot ".venv\Scripts\Activate.ps1"
 
 # ---------------------------------------------------------------------------
@@ -45,8 +45,8 @@ if (-not (Test-Path (Join-Path $BackendDir "main.py"))) {
     exit 1
 }
 
-if (-not (Test-Path (Join-Path $FrontendDir "app.py"))) {
-    Write-Error "Frontend app.py not found in '$FrontendDir'."
+if (-not (Test-Path (Join-Path $FrontendDir "package.json"))) {
+    Write-Error "Frontend package.json not found in '$FrontendDir'. Run 'npm install' first."
     exit 1
 }
 
@@ -70,11 +70,10 @@ Start-Process powershell.exe -ArgumentList "-NoExit", "-Command", $BackendCmd
 Start-Sleep -Seconds 3
 
 # ---------------------------------------------------------------------------
-# Launch Streamlit frontend in a new terminal window
+# Launch React/Vite frontend dev server in a new terminal window
 # ---------------------------------------------------------------------------
-Write-Host "Starting Streamlit frontend on port $FrontendPort ..."
-$StreamlitArgs = "run app.py --server.port $FrontendPort"
-$FrontendCmd   = "& '$VenvActivate'; Set-Location '$FrontendDir'; `$env:BACKEND_URL='http://localhost:$Port'; streamlit $StreamlitArgs"
+Write-Host "Starting React (Vite) frontend on port $FrontendPort ..."
+$FrontendCmd = "Set-Location '$FrontendDir'; `$env:VITE_BACKEND_URL='http://localhost:$Port'; npm run dev -- --port $FrontendPort"
 Start-Process powershell.exe -ArgumentList "-NoExit", "-Command", $FrontendCmd
 
 # ---------------------------------------------------------------------------
