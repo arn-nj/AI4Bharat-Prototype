@@ -1,19 +1,26 @@
-# Lambda-only dependencies (slim — no dev/notebook/visualization packages)
+# Lambda production dependencies — keep slim (no dev/notebook/viz packages)
+# Installed into the Docker image via: pip install -r requirements.txt
 
-# API backend
+# ── API backend ──────────────────────────────────────────────────────────
 fastapi>=0.111.0
 pydantic>=2.6.0
-mangum>=0.19.0
+mangum>=0.19.0          # ASGI adapter — wraps FastAPI for Lambda
+uvicorn>=0.29.0         # used for local dev; slim (no [standard] extras needed on Lambda)
+python-multipart>=0.0.9 # required for FastAPI form/file uploads
 
-# AWS SDK
+# ── Database ─────────────────────────────────────────────────────────────
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.0  # RDS PostgreSQL — binary wheel, no libpq compile needed in Lambda
+
+# ── AWS SDK ──────────────────────────────────────────────────────────────
 boto3>=1.34.0
+botocore>=1.34.0        # explicit pin — used directly by llm_engine Bedrock calls
 
-# ML inference
+# ── ML inference ─────────────────────────────────────────────────────────
 scikit-learn>=1.3.0
 joblib>=1.3.0
 pandas>=2.0.0
 numpy>=1.24.0
 
-# LLM engine
-python-dotenv>=1.0.0
-requests>=2.31.0
+# ── LLM engine ───────────────────────────────────────────────────────────
+requests>=2.31.0        # Bedrock REST fallback in llm_engine/llm.py

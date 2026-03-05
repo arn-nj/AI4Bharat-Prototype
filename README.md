@@ -13,23 +13,48 @@ A decision-support system that combines **ML risk scoring**, **deterministic pol
 
 ```
 src/
-├── backend/            FastAPI — ML + Policy + LLM pipeline (Lambda container)
-├── frontend/           React 18 + Vite 5 + Tailwind — static site on S3+CloudFront
-├── llm_engine/         Amazon Bedrock client + prompt builders
-├── model_training/     Training data, Jupyter notebooks, trained model artifacts
-└── storage/            S3 helper (model artifacts, compliance docs)
+├── backend/
+│   ├── db/                 SQLAlchemy ORM — AssetRow, RiskAssessmentRow, RecommendationRow, AuditRow
+│   ├── orm_models/         Pydantic schemas — asset, risk, recommendation, audit
+│   ├── services/           Business logic — risk_engine, recommendation, approval, kpi, llm, data_generator
+│   ├── routers/            FastAPI routers — assets, assess, approvals, kpis, ai, demo, audit_trail
+│   └── main.py             App entry-point + Mangum Lambda handler (19 routes)
+├── frontend/               React 18 + Vite 5 + Tailwind + recharts — 7-page SPA
+│   └── src/pages/          Dashboard, AssessDevice, AssetInventory, ApprovalQueue,
+│                           AuditTrail, AIAssistant, Settings
+├── llm_engine/             Amazon Bedrock client (Qwen3-30B) + structured prompt builders
+├── model_training/         Training data (1235 records), Jupyter notebooks, sklearn Pipeline
+│   └── models/             risk_label_model.joblib (AUC-ROC 0.9962)
+└── storage/                S3 helper for model artifacts
 
 scripts/
-├── deploy.sh           Full-stack local deploy (sam build → SAM deploy → npm build → S3 sync)
-└── start.ps1           Local dev launcher (FastAPI + Vite dev server)
+├── deploy.sh               Full-stack deploy (sam build → SAM deploy → npm build → S3 sync)
+├── start.ps1               Windows local dev launcher (FastAPI + Vite dev server)
+└── start.sh                Linux/WSL local dev launcher
+```
+
+**Data flow:**
+
+```
+POST /api/assess/{asset_id}
+  → risk_engine  (policy rules 60% + sklearn ML 40%)
+  → recommendation (action mapping + Bedrock LLM rationale + ITSM task)
+  → DB: RiskAssessmentRow + RecommendationRow, asset.state = review_pending
+
+POST /api/approvals/{id}/decide
+  → approval (state machine) → AuditRow (immutable audit trail)
+
+GET /api/kpis
+  → kpi service (fleet metrics + CO2/landfill/trees environmental impact)
 ```
 
 **AWS stack:**
 
 ```
 Browser → CloudFront → S3 (React build)
-Browser → API Gateway → Lambda (FastAPI/Mangum) → Amazon Bedrock
+Browser → API Gateway → Lambda (FastAPI/Mangum) → Amazon Bedrock (Qwen3-30B)
                                                  → S3 (model artifacts)
+                                                 → /tmp/ewaste.db (SQLite, per-invocation)
 ```
 
 ---
@@ -123,7 +148,15 @@ BEDROCK_MODEL_ID=qwen.qwen3-30b-a3b
 
 # S3 bucket for model artifacts (optional — falls back to local files)
 S3_BUCKET_NAME=ewaste-asset-optimizer-dev-992332682921
+
+# Database
+# Production (RDS PostgreSQL):
+# DATABASE_URL=postgresql+psycopg2://user:pass@your-rds-host.region.rds.amazonaws.com:5432/ewaste
+# Local dev (SQLite — omit this line, SQLite is the automatic fallback):
+# DATABASE_URL=sqlite:///./ewaste.db
 ```
+
+> **Database**: Production deployments use **Amazon RDS (PostgreSQL)**. The `DATABASE_URL` env var is passed to Lambda via the SAM `RDSConnectionString` parameter at deploy time. Locally, omitting `DATABASE_URL` falls back to SQLite automatically.
 
 > If Bedrock credentials are missing the pipeline falls back to deterministic templates — ML + Policy stages continue to work normally.
 
@@ -137,117 +170,86 @@ S3_BUCKET_NAME=ewaste-asset-optimizer-dev-992332682921
 .\scripts\start.ps1 -Port 9000 -FrontendPort 5174
 ```
 
+```bash
+# Linux / WSL
+./scripts/start.sh
+```
+
 | Service | Default URL |
 |---|---|
 | FastAPI backend | http://localhost:8000 |
 | Swagger UI | http://localhost:8000/docs |
 | React frontend (Vite) | http://localhost:5173 |
 
-**Or start manually:**
+**Or start manually (always run from repo root):**
 
 ```bash
-# Backend
-cd src/backend && uvicorn main:app --reload --port 8000
+# Backend — MUST be run from repo root (not from src/backend/)
+.venv/bin/uvicorn src.backend.main:app --reload --port 8000
 
 # Frontend (separate terminal)
-cd src/frontend && VITE_BACKEND_URL=http://localhost:8000 npm run dev
+cd src/frontend && npm run dev
 ```
 
 ---
 
 ## API reference
 
-### `GET /health`
+All endpoints are prefixed with `/api`. Swagger UI: `http://localhost:8000/docs`
 
-```json
-{ "status": "ok", "service": "asset-lifecycle-optimizer" }
-```
-
-### `GET /model_info`
-
-Returns ML model metadata: version, training date, AUC-ROC, feature list.
-
-### `POST /analyse_device`
-
-Runs the full 4-stage pipeline and returns a complete analysis.
-
-**Pipeline stages:**
-
-| # | Stage | Module | Description |
-|---|---|---|---|
-| 1 | Feature engineering | `device_analyser.py` | Derives rates: `incident_rate_per_month`, `critical_incident_ratio`, `battery_degradation_rate`, `thermal_events_per_month` |
-| 2 | ML inference | `device_analyser.py` | Gradient boosting predicts `high`/`medium`/`low` + class probabilities. Skipped when `data_completeness < 0.6`. |
-| 3 | Policy engine | `device_analyser.py` | Deterministic threshold rules map risk to lifecycle action |
-| 4 | LLM engine | `llm_engine/llm.py` | Bedrock generates ≤120-word explanation + structured ITSM task JSON. Falls back to templates on timeout. |
-
-**Policy rules:**
-
-| Rule | Condition | Classification |
+| Method | Path | Description |
 |---|---|---|
-| `age_and_tickets` | `age ≥ 42 months AND total_incidents ≥ 5` | High |
-| `thermal_threshold` | `thermal_events_count ≥ 10` | High |
-| `smart_sectors_threshold` | `smart_sectors_reallocated ≥ 50` | High |
-| *(partial)* | `age ≥ 30 AND tickets ≥ 3` OR `thermal ≥ 5` OR `smart ≥ 25` | Medium |
+| `GET` | `/api/health` | Service health + version |
+| `GET` | `/api/model_info` | ML model metadata (AUC-ROC, features, version) |
+| `POST` | `/api/assets` | Register a new IT asset |
+| `GET` | `/api/assets` | List assets (filters: department, region, state, search) |
+| `GET` | `/api/assets/{asset_id}` | Get a single asset |
+| `DELETE` | `/api/assets/{asset_id}` | Delete an asset |
+| `POST` | `/api/assess/{asset_id}` | Run full risk + recommendation pipeline |
+| `GET` | `/api/approvals/queue` | List assets pending approval (`review_pending`) |
+| `POST` | `/api/approvals/{id}/decide` | Approve or reject a recommendation |
+| `GET` | `/api/kpis` | Fleet KPIs + environmental impact metrics |
+| `GET` | `/api/audit` | Audit trail (filters: asset_id, actor) |
+| `POST` | `/api/ai/chat` | LLM conversational assistant |
+| `POST` | `/api/ai/suggest-policy` | AI-generated policy threshold suggestions |
+| `POST` | `/api/demo/generate` | Generate synthetic fleet data (`count`, `auto_assess`) |
+| `DELETE` | `/api/demo/reset` | Wipe all data (dev/demo use) |
 
-**Action mapping:**
+### Assessment pipeline (`POST /api/assess/{asset_id}`)
 
-| Condition | Action |
-|---|---|
-| `risk_score ≥ 0.80` AND `age ≥ 42 months` | `RECYCLE` |
-| `risk_score ≥ 0.70` AND device is repairable | `REPAIR` |
-| `risk_score ≥ 0.50` | `REFURBISH` |
-| `risk_score < 0.30` | `REDEPLOY` |
-| else | `RESALE` |
-
-**Request fields (`DeviceInput`):**
-
-| Field | Type | Description |
+| # | Stage | Description |
 |---|---|---|
-| `asset_id` | `str` | Unique asset identifier |
-| `device_type` | `str` | `Laptop` \| `Server` \| `Desktop` |
-| `brand`, `department`, `region` | `str` | Asset metadata |
-| `age_in_months` | `int ≥ 0` | Asset age |
-| `battery_health_percent` | `float 0–100` | Current battery health |
-| `battery_cycles` | `int ≥ 0` | Charge cycles |
-| `smart_sectors_reallocated` | `int ≥ 0` | SMART drive indicator |
-| `thermal_events_count` | `int ≥ 0` | Overheating events (90-day window) |
-| `total_incidents` | `int ≥ 0` | Support tickets (90-day window) |
-| `critical_incidents` | `int ≥ 0` | P1 tickets |
-| `performance_rating` | `int 1–5` | Subjective performance score |
-| `data_completeness` | `float 0–1` | Below `0.6` → policy-only path |
+| 1 | Policy engine | Deterministic threshold rules (age ≥ 42 months, tickets ≥ 5, thermal ≥ 10, SMART ≥ 50) |
+| 2 | ML inference | sklearn Pipeline (Gradient Boosting) — high/medium/low + class probabilities |
+| 3 | Score blend | Policy (60%) + ML (40%) when ML confidence ≥ 0.80 |
+| 4 | Action mapping | risk score → Redeploy / Resale / Refurbish / Recycle |
+| 5 | LLM rationale | Bedrock Qwen3-30B generates explanation + ITSM task JSON |
 
-**Response fields (`AnalysisResult`):**
+### KPI response includes environmental impact
 
 | Field | Description |
 |---|---|
-| `final_action` | Lifecycle action: `RECYCLE` / `REPAIR` / `REFURBISH` / `RESALE` / `REDEPLOY` |
-| `confidence_score` | Max ML class probability, or `0.5` on policy-only path |
-| `ml_result` | Risk label, score, confidence band, class probabilities |
-| `policy_result` | Classification, triggered rules, supporting signals |
-| `llm_result` | Explanation text, ITSM task JSON, `llm_available` flag |
-
-### Integration test
-
-Runs 10 hand-crafted scenarios against the live API:
-
-```bash
-cd src/backend
-python test_analyse_device.py
-python test_analyse_device.py --url https://pacyjst474.execute-api.us-east-1.amazonaws.com/dev
-python test_analyse_device.py --stop-on-error
-```
+| `co2_saved_kg` | Estimated CO₂ savings vs. new device procurement |
+| `landfill_reduction_kg` | Estimated e-waste diverted from landfill |
+| `carbon_offset_trees` | Equivalent CO₂ absorbed by trees |
+| `material_recovery_pct` | Percentage of devices sent to recycle/refurbish |
 
 ---
 
 ## Frontend
 
-The React+Vite frontend (served from CloudFront + S3) provides:
+The React 18 + Vite 5 + Tailwind SPA provides 7 pages:
 
-- **Scenario selector** — 10 preset device scenarios matching the integration test suite
-- **Device characteristics** — all input fields as two-column tables
-- **Analysis pipeline** — calls `POST /analyse_device` with a 90s timeout
-- **Results in three tabs:** ML Model · Policy Engine · LLM Engine
-- **Summary banner** — final action (colour-coded), confidence score, expected match indicator
+| Page | Path | Description |
+|---|---|---|
+| Dashboard | `/` | KPI strip, action distribution donut, risk bars, environmental impact |
+| Assess Device | `/assess` | Asset form → full pipeline result with ML probabilities + ITSM task |
+| Asset Inventory | `/assets` | Paginated table with department/state filters |
+| Approval Queue | `/approvals` | Split-view: pending queue cards + approve/reject decision panel |
+| Audit Trail | `/audit` | Full immutable audit log |
+| AI Assistant | `/ai` | Conversational LLM chat with policy Q&A |
+| Settings | `/settings` | Demo generator + policy threshold editor + AI policy suggestions |
+
 
 ---
 

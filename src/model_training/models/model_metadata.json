@@ -83,5 +83,39 @@
       "mean_auc_roc": 0.9972
     }
   },
-  "target_met": true
+  "target_met": true,
+  "feature_importances": [
+    {
+      "feature": "thermal_events_count",
+      "importance": 0.1155
+    },
+    {
+      "feature": "smart_sectors_reallocated",
+      "importance": 0.0928
+    },
+    {
+      "feature": "battery_health_percent",
+      "importance": 0.0873
+    },
+    {
+      "feature": "overheating_issues",
+      "importance": 0.07
+    },
+    {
+      "feature": "age_in_months",
+      "importance": 0.0603
+    },
+    {
+      "feature": "performance_rating",
+      "importance": 0.0433
+    },
+    {
+      "feature": "medium_incidents",
+      "importance": 0.0428
+    },
+    {
+      "feature": "high_incidents",
+      "importance": 0.0342
+    }
+  ]
 }
