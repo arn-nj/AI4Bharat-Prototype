@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { generateDemo, resetDemo, suggestPolicy } from '../services/api';
+import { generateDemo, resetDemo, suggestPolicy, analyzeComplianceDoc, type ComplianceDocResult } from '../services/api';
 
 export default function Settings() {
   const [count, setCount]   = useState(10);
@@ -18,6 +18,13 @@ export default function Settings() {
   });
   const [suggestion, setSuggestion] = useState<string | null>(null);
   const [suggestLoading, setSuggestLoading] = useState(false);
+
+  const [docType, setDocType] = useState('certificate');
+  const [docRegion, setDocRegion] = useState('India');
+  const [docAssetId, setDocAssetId] = useState('');
+  const [docContent, setDocContent] = useState('');
+  const [docResult, setDocResult] = useState<ComplianceDocResult | null>(null);
+  const [docLoading, setDocLoading] = useState(false);
 
   const handleGenerate = async () => {
     setGenLoading(true);
@@ -50,6 +57,23 @@ export default function Settings() {
       setSuggestion(r.suggestion);
     } finally {
       setSuggestLoading(false);
+    }
+  };
+
+  const handleAnalyzeDoc = async () => {
+    if (!docContent.trim()) return;
+    setDocLoading(true);
+    setDocResult(null);
+    try {
+      const r = await analyzeComplianceDoc({
+        document_type: docType,
+        region: docRegion,
+        asset_id: docAssetId || 'N/A',
+        file_content: docContent,
+      });
+      setDocResult(r);
+    } finally {
+      setDocLoading(false);
     }
   };
 
@@ -121,6 +145,87 @@ export default function Settings() {
         {suggestion && (
           <div className="bg-purple-50 border border-purple-100 rounded-lg p-3 text-sm text-gray-700 leading-relaxed">
             {suggestion}
+          </div>
+        )}
+      </section>
+
+      {/* Compliance Doc Analyzer */}
+      <section className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 space-y-4">
+        <div>
+          <h2 className="font-semibold text-gray-800">Compliance Document Analyzer</h2>
+          <p className="text-xs text-gray-500 mt-0.5">Paste document text to extract entities and verify compliance fields via AI.</p>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={labelClass}>Document Type</label>
+            <select className={inputClass} value={docType} onChange={e => setDocType(e.target.value)}>
+              <option value="certificate">Certificate</option>
+              <option value="invoice">Invoice</option>
+              <option value="chain_of_custody">Chain of Custody</option>
+            </select>
+          </div>
+          <div>
+            <label className={labelClass}>Region</label>
+            <input className={inputClass} value={docRegion} onChange={e => setDocRegion(e.target.value)} placeholder="e.g. India" />
+          </div>
+          <div className="col-span-2">
+            <label className={labelClass}>Asset ID (optional)</label>
+            <input className={inputClass} value={docAssetId} onChange={e => setDocAssetId(e.target.value)} placeholder="e.g. ASSET-abc123" />
+          </div>
+        </div>
+        <div>
+          <label className={labelClass}>Document Text *</label>
+          <textarea
+            rows={6}
+            className={inputClass}
+            value={docContent}
+            onChange={e => setDocContent(e.target.value)}
+            placeholder="Paste the extracted text content of the compliance document here…"
+          />
+        </div>
+        <button
+          onClick={handleAnalyzeDoc}
+          disabled={docLoading || !docContent.trim()}
+          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 rounded-lg text-sm transition-colors disabled:opacity-50"
+        >
+          {docLoading ? 'Analysing…' : 'Analyse Document'}
+        </button>
+        {docResult && (
+          <div className="space-y-3">
+            <div className={`rounded-lg px-3 py-2 text-sm font-semibold ${
+              docResult.verification_status === 'VERIFIED' ? 'bg-green-50 text-green-700' :
+              docResult.verification_status === 'REJECTED' ? 'bg-red-50 text-red-700' : 'bg-yellow-50 text-yellow-700'
+            }`}>
+              Status: {docResult.verification_status}
+            </div>
+            <p className="text-sm text-gray-700 leading-relaxed">{docResult.summary}</p>
+            {Object.keys(docResult.extracted_entities).length > 0 && (
+              <div className="bg-gray-50 rounded-lg p-3 text-xs space-y-1">
+                <p className="font-semibold text-gray-600 mb-1">Extracted Fields</p>
+                {Object.entries(docResult.extracted_entities).map(([k, v]) => (
+                  <div key={k} className="flex gap-2">
+                    <span className="text-gray-500 capitalize min-w-[140px]">{k.replace(/_/g, ' ')}</span>
+                    <span className={`font-medium ${v === 'UNCLEAR' ? 'text-yellow-600' : 'text-gray-800'}`}>{v}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {docResult.missing_fields.length > 0 && (
+              <div className="bg-red-50 border border-red-100 rounded-lg p-3 text-xs">
+                <p className="font-semibold text-red-700 mb-1">Missing Fields</p>
+                <ul className="list-disc list-inside space-y-0.5 text-red-600">
+                  {docResult.missing_fields.map(f => <li key={f}>{f.replace(/_/g, ' ')}</li>)}
+                </ul>
+              </div>
+            )}
+            {docResult.recommendations.length > 0 && (
+              <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 text-xs">
+                <p className="font-semibold text-amber-700 mb-1">Recommendations</p>
+                <ul className="list-disc list-inside space-y-0.5 text-amber-700">
+                  {docResult.recommendations.map((r, i) => <li key={i}>{r}</li>)}
+                </ul>
+              </div>
+            )}
           </div>
         )}
       </section>

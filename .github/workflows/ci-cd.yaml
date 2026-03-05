@@ -137,7 +137,7 @@ jobs:
             --capabilities CAPABILITY_IAM \
             --parameter-overrides \
               StageName=dev \
-              BedrockModelId=${{ vars.BEDROCK_MODEL_ID || 'qwen.qwen3-30b-a3b' }} \
+              BedrockModelId=${{ vars.BEDROCK_MODEL_ID || 'qwen.qwen3-next-80b-a3b' }} \
               BedrockRegion=${{ env.AWS_REGION }} \
               VpcId="${VPC_ID}" \
               DBUsername=${{ vars.DB_USERNAME || 'ewasteadmin' }} \
@@ -224,7 +224,7 @@ jobs:
           echo "| API URL | ${API_URL} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Swagger Docs | ${API_URL}/docs |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Region | ${{ env.AWS_REGION }} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Bedrock Model | ${{ vars.BEDROCK_MODEL_ID || 'qwen.qwen3-30b-a3b' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Bedrock Model | ${{ vars.BEDROCK_MODEL_ID || 'qwen.qwen3-next-80b-a3b' }} |" >> "$GITHUB_STEP_SUMMARY"
 
   # ── 3. Deploy to Production ────────────────────────────────────────────
   deploy-prod:
@@ -288,7 +288,7 @@ jobs:
             --capabilities CAPABILITY_IAM \
             --parameter-overrides \
               StageName=prod \
-              BedrockModelId=${{ vars.BEDROCK_MODEL_ID || 'qwen.qwen3-30b-a3b' }} \
+              BedrockModelId=${{ vars.BEDROCK_MODEL_ID || 'qwen.qwen3-next-80b-a3b' }} \
               BedrockRegion=${{ env.AWS_REGION }} \
               VpcId="${VPC_ID}" \
               DBUsername=${{ vars.DB_USERNAME || 'ewasteadmin' }} \
@@ -318,7 +318,7 @@ jobs:
       - name: Build React frontend
         working-directory: src/frontend
         env:
-          VITE_BACKEND_URL: ${{ steps.deploy.outputs.api_url }}
+          VITE_API_URL: ${{ steps.deploy.outputs.api_url }}
         run: |
           npm ci
           npm run build
@@ -375,4 +375,4 @@ jobs:
           echo "| API URL | ${API_URL} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Swagger Docs | ${API_URL}/docs |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Region | ${{ env.AWS_REGION }} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Bedrock Model | ${{ vars.BEDROCK_MODEL_ID || 'qwen.qwen3-30b-a3b' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Bedrock Model | ${{ vars.BEDROCK_MODEL_ID || 'qwen.qwen3-next-80b-a3b' }} |" >> "$GITHUB_STEP_SUMMARY"

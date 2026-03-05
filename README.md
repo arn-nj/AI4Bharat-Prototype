@@ -144,7 +144,7 @@ Create a `.env` file at the repo root:
 ```bash
 # Amazon Bedrock (required for LLM stage)
 AWS_REGION=us-east-1
-BEDROCK_MODEL_ID=qwen.qwen3-30b-a3b
+BEDROCK_MODEL_ID=qwen.qwen3-next-80b-a3b
 
 # S3 bucket for model artifacts (optional — falls back to local files)
 S3_BUCKET_NAME=ewaste-asset-optimizer-dev-992332682921
@@ -282,7 +282,7 @@ Required GitHub secrets:
 | `AWS_ACCESS_KEY_ID` | IAM access key |
 | `AWS_SECRET_ACCESS_KEY` | IAM secret key |
 
-Optional Actions variable: `BEDROCK_MODEL_ID` (defaults to `qwen.qwen3-30b-a3b`).
+Optional Actions variable: `BEDROCK_MODEL_ID` (defaults to `qwen.qwen3-next-80b-a3b`).
 
 ### Manual SAM deploy
 
@@ -296,7 +296,7 @@ sam deploy \
   --capabilities CAPABILITY_IAM \
   --parameter-overrides \
     StageName=dev \
-    BedrockModelId=qwen.qwen3-30b-a3b \
+    BedrockModelId=qwen.qwen3-next-80b-a3b \
     BedrockRegion=us-east-1
 ```
 

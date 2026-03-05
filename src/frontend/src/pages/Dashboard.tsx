@@ -3,8 +3,8 @@ import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend,
 } from 'recharts';
-import { Leaf, Recycle, Wrench, Package, RefreshCw, TreePine, AlertTriangle, Pause, Play } from 'lucide-react';
-import { getKPIs, getModelInfo, generateDemo, type KPIOut, type ModelInfo } from '../services/api';
+import { Leaf, Recycle, Wrench, Package, RefreshCw, TreePine, AlertTriangle, Pause, Play, BrainCircuit } from 'lucide-react';
+import { getKPIs, getModelInfo, generateDemo, getFleetNarrative, type KPIOut, type ModelInfo } from '../services/api';
 import KPICard from '../components/KPICard';
 
 const REFRESH_INTERVAL_SEC = 30;
@@ -22,6 +22,8 @@ const RISK_COLORS = { high: '#ef4444', medium: '#f97316', low: '#22c55e' };
 export default function Dashboard() {
   const [kpis, setKpis] = useState<KPIOut | null>(null);
   const [modelInfo, setModelInfo] = useState<ModelInfo | null>(null);
+  const [narrative, setNarrative] = useState<string>('');
+  const [narrativeLoading, setNarrativeLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
@@ -35,6 +37,16 @@ export default function Dashboard() {
       const [k, m] = await Promise.all([getKPIs(), getModelInfo()]);
       setKpis(k);
       setModelInfo(m);
+      // Fetch narrative in the background after KPIs land
+      if (k && k.total_assets > 0) {
+        setNarrativeLoading(true);
+        getFleetNarrative()
+          .then(r => setNarrative(r.narrative ?? ''))
+          .catch(() => setNarrative(''))
+          .finally(() => setNarrativeLoading(false));
+      } else {
+        setNarrative('');
+      }
     } catch {
       // ignore
     } finally {
@@ -181,6 +193,24 @@ export default function Dashboard() {
               icon={<Leaf size={20} className="text-green-500" />}
             />
           </div>
+
+          {/* AI Fleet Narrative */}
+          {(narrative || narrativeLoading) && (
+            <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-100 rounded-xl p-4 flex items-start gap-3">
+              <BrainCircuit size={20} className="text-indigo-500 flex-shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold text-indigo-600 uppercase tracking-wide mb-1">AI Fleet Summary</p>
+                {narrativeLoading ? (
+                  <div className="flex items-center gap-2 text-sm text-gray-500">
+                    <span className="inline-block w-3 h-3 rounded-full border-2 border-indigo-400 border-t-transparent animate-spin" />
+                    Generating executive summary…
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-700 leading-relaxed">{narrative}</p>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Row 2: action donut + decision drivers */}
           <div className="grid md:grid-cols-2 gap-4">

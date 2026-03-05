@@ -92,6 +92,7 @@ class AuditRow(Base):
     new_state = Column(String, nullable=False)
     asset_snapshot_json = Column(Text, nullable=False)
     recommendation_snapshot_json = Column(Text, nullable=False)
+    llm_impact = Column(Text, nullable=True)
     timestamp = Column(String, default=lambda: datetime.now(timezone.utc).isoformat())
 
 

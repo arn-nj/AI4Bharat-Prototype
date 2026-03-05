@@ -30,6 +30,13 @@ class PolicySuggestRequest(BaseModel):
     smart_sector_threshold: int = 50
 
 
+class AnalyzeDocRequest(BaseModel):
+    document_type: str = "certificate"   # certificate | invoice | chain_of_custody
+    region: str = "India"
+    asset_id: str = ""
+    file_content: str
+
+
 @router.post("/chat", response_model=ChatResponse)
 def chat(payload: ChatRequest, db: Session = Depends(get_db)):
     """Chat with the AI Assistant about your fleet."""
@@ -50,3 +57,23 @@ def suggest_policy(payload: PolicySuggestRequest):
     """Get LLM-powered recommendations on policy threshold tuning."""
     suggestion = llm_svc.suggest_policy(payload.model_dump())
     return {"suggestion": suggestion}
+
+
+@router.get("/fleet-narrative")
+def fleet_narrative(db: Session = Depends(get_db)):
+    """Return an AI-generated executive summary of current fleet health."""
+    kpis = kpi_svc.calculate_kpis(db)
+    narrative = llm_svc.fleet_narrative(kpis)
+    return {"narrative": narrative}
+
+
+@router.post("/analyze-doc")
+def analyze_doc(payload: AnalyzeDocRequest):
+    """Analyse a compliance document and return structured extraction results."""
+    result = llm_svc.analyze_compliance_doc(
+        document_type=payload.document_type,
+        region=payload.region,
+        asset_id=payload.asset_id,
+        file_content=payload.file_content,
+    )
+    return result

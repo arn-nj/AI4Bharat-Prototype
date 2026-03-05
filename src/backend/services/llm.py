@@ -29,6 +29,7 @@ try:
         build_explanation_prompt,
         build_itsm_task_prompt,
         build_conversational_prompt,
+        build_compliance_doc_prompt,
         fallback_explanation,
         fallback_itsm_task,
     )
@@ -229,3 +230,193 @@ def suggest_policy(current_settings: Dict[str, Any]) -> str:
     except Exception as exc:
         log.warning("suggest_policy failed (%s)", exc)
         return "Unable to generate policy suggestions."
+
+
+# ── Default required fields for compliance docs ──────────────────────────────
+_DEFAULT_REQUIRED_FIELDS: Dict[str, list] = {
+    "certificate": ["certificate_number", "issuing_authority", "issue_date", "expiry_date", "asset_ids"],
+    "invoice": ["invoice_number", "vendor_name", "date", "amount", "asset_ids"],
+    "chain_of_custody": ["origin", "handler", "destination", "transfer_date", "asset_ids"],
+}
+
+
+def fleet_narrative(kpis) -> str:
+    """Generate a 3-sentence executive summary of fleet health from KPI data."""
+    llm = _get_llm()
+    if llm is None:
+        return ""
+    context_data = {
+        "total_assets": kpis.total_assets,
+        "high_risk": kpis.high_risk,
+        "medium_risk": kpis.medium_risk,
+        "low_risk": kpis.low_risk,
+        "pending_approval": kpis.pending_approval,
+        "co2_saved_kg": kpis.co2_saved_kg,
+        "lifecycle_actions": kpis.lifecycle_actions,
+        "avg_age_months": kpis.avg_age_months,
+        "deferred_spend_inr": kpis.deferred_spend_inr,
+        "carbon_offset_trees": kpis.carbon_offset_trees,
+        "assessed_count": kpis.assessed_count,
+    }
+    system_msg, user_msg = build_conversational_prompt(
+        user_query=(
+            "Write a concise 3-sentence executive summary of the current IT fleet health. "
+            "Cover: overall risk posture, top recommended actions, and environmental/cost impact. "
+            "Do NOT include follow-up queries. Plain prose only — no bullet points or headers."
+        ),
+        context_data=context_data,
+    )
+    try:
+        text = llm.generic_llm(system_msg, user_msg)
+        return text.strip() if text else ""
+    except Exception as exc:
+        log.warning("fleet_narrative failed (%s)", exc)
+        return ""
+
+
+def analyze_compliance_doc(
+    *,
+    document_type: str,
+    region: str,
+    asset_id: str,
+    file_content: str,
+) -> Dict[str, Any]:
+    """Analyse a compliance document text and return structured JSON result.
+
+    Returns a dict with keys: summary, extracted_entities, missing_fields,
+    verification_status, recommendations.
+    Falls back to an error dict if LLM is unavailable.
+    """
+    llm = _get_llm()
+    if llm is None:
+        return {
+            "summary": "LLM service unavailable — cannot analyse document.",
+            "extracted_entities": {},
+            "missing_fields": [],
+            "verification_status": "INCOMPLETE",
+            "recommendations": ["Ensure the LLM service is configured and retry."],
+        }
+
+    required_fields = _DEFAULT_REQUIRED_FIELDS.get(document_type.lower(), ["document_date", "issuer", "asset_id"])
+    system_msg, user_msg = build_compliance_doc_prompt(
+        document_type=document_type,
+        region=region,
+        asset_id=asset_id,
+        file_content=file_content,
+        required_fields=required_fields,
+    )
+    try:
+        raw = llm.generic_llm(system_msg, user_msg)
+        if not raw:
+            raise ValueError("empty response")
+        raw = raw.strip()
+        if raw.startswith("```"):
+            lines = raw.split("\n")
+            raw = "\n".join(lines[1:-1])
+        return json.loads(raw)
+    except Exception as exc:
+        log.warning("analyze_compliance_doc failed (%s)", exc)
+        return {
+            "summary": "Document analysis failed. Please try again.",
+            "extracted_entities": {},
+            "missing_fields": required_fields,
+            "verification_status": "INCOMPLETE",
+            "recommendations": ["Retry the analysis or review the document manually."],
+        }
+
+
+def llm_predict(asset) -> Optional[Dict[str, Any]]:
+    """Ask the LLM to independently predict risk level + recommended action.
+
+    Returns a dict with keys: risk_level, action, reasoning, or None on failure.
+    This is intentionally run BEFORE the recommendation is shown to the user
+    so it serves as an independent second opinion.
+    """
+    llm = _get_llm()
+    if llm is None:
+        return None
+
+    system_msg = (
+        "You are a seasoned IT asset lifecycle risk analyst. "
+        "Given hardware attributes and telemetry data for a single device, "
+        "independently assess the device and predict its risk level and the "
+        "most appropriate lifecycle action.\n\n"
+        "Rules:\n"
+        "1. Respond with ONLY a valid JSON object — no prose, no markdown fences.\n"
+        "2. The JSON must have exactly three fields:\n"
+        '   - \"risk_level\"  : \"high\" | \"medium\" | \"low\"\n'
+        '   - \"action\"      : \"recycle\" | \"repair\" | \"refurbish\" | \"redeploy\" | \"resale\"\n'
+        '   - \"reasoning\"   : string, 1-2 sentences explaining your decision\n'
+        "3. Base your decision ONLY on the provided data — do not guess missing fields."
+    )
+
+    # Build a concise attribute summary
+    lines = [
+        f"device_type: {getattr(asset, 'device_type', 'unknown')}",
+        f"brand: {getattr(asset, 'brand', None) or 'unknown'}",
+        f"age_months: {getattr(asset, 'age_months', 'unknown')}",
+        f"department: {getattr(asset, 'department', 'unknown')}",
+        f"region: {getattr(asset, 'region', 'unknown')}",
+    ]
+    for field in ("battery_cycles", "thermal_events_count", "smart_sectors_reallocated",
+                  "total_incidents", "critical_incidents"):
+        val = getattr(asset, field, None)
+        if val is not None:
+            lines.append(f"{field}: {val}")
+
+    user_msg = (
+        "Assess the following IT asset and respond with ONLY the JSON object:\n\n"
+        + "\n".join(lines)
+    )
+
+    try:
+        raw = llm.generic_llm(system_msg, user_msg)
+        if not raw:
+            return None
+        raw = raw.strip()
+        if raw.startswith("```"):
+            raw = "\n".join(raw.split("\n")[1:-1])
+        return json.loads(raw)
+    except Exception as exc:
+        log.warning("llm_predict failed (%s)", exc)
+        return None
+
+
+def approval_impact(
+    *,
+    decision: str,
+    action: str,
+    asset_id: str,
+    device_type: str,
+    department: str,
+    actor: str,
+    rationale: str,
+) -> str:
+    """Generate a one-paragraph change-log / impact statement for an approval decision."""
+    llm = _get_llm()
+    if llm is None:
+        return ""
+    context_data = {
+        "decision": decision,
+        "action": action,
+        "asset_id": asset_id,
+        "device_type": device_type,
+        "department": department,
+        "actor": actor,
+        "rationale": rationale,
+    }
+    system_msg, user_msg = build_conversational_prompt(
+        user_query=(
+            f"A lifecycle decision has just been recorded. Write a concise 2-sentence "
+            f"impact statement suitable for an audit log entry explaining what was decided, "
+            f"why it was decided, and what the operational impact will be. "
+            f"Plain prose only — no bullet points, headers, or follow-up queries."
+        ),
+        context_data=context_data,
+    )
+    try:
+        text = llm.generic_llm(system_msg, user_msg)
+        return text.strip() if text else ""
+    except Exception as exc:
+        log.warning("approval_impact failed (%s)", exc)
+        return ""

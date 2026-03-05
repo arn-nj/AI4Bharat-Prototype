@@ -77,26 +77,15 @@ async def strip_stage_prefix(request: Request, call_next):
     return await call_next(request)
 
 
-# ── DB init on startup ────────────────────────────────────────────────────────
-
-@app.on_event("startup")
-def on_startup():
-    try:
-        from .db.database import init_db, PolicyConfigRow, get_db
-        from sqlalchemy.orm import Session
-        init_db()
-        # Seed default policy config if not present
-        db_gen = get_db()
-        db: Session = next(db_gen)
-        try:
-            if not db.query(PolicyConfigRow).first():
-                db.add(PolicyConfigRow())
-                db.commit()
-                log.info("Default policy config seeded.")
-        finally:
-            db.close()
-    except Exception as exc:  # noqa: BLE001
-        log.warning("DB init skipped during startup (will retry per-request): %s", exc)
+# ── DB init (module-level, runs once on Lambda cold start) ───────────────────
+# @app.on_event("startup") never fires when Mangum uses lifespan="off",
+# so we initialise the DB synchronously at import time instead.
+try:
+    from .db.database import init_db
+    init_db()
+    log.info("DB tables initialised / verified.")
+except Exception as exc:  # noqa: BLE001
+    log.warning("DB init failed at cold start (tables may be missing): %s", exc)
 
 
 # ── Routers ───────────────────────────────────────────────────────────────────

@@ -4,6 +4,12 @@ import ActionBadge from '../components/ActionBadge';
 import RiskBadge from '../components/RiskBadge';
 import ConfidenceBar from '../components/ConfidenceBar';
 
+const RISK_COLORS: Record<string, string> = {
+  high:   'bg-red-50 border-red-200 text-red-700',
+  medium: 'bg-orange-50 border-orange-200 text-orange-700',
+  low:    'bg-green-50 border-green-200 text-green-700',
+};
+
 const DEPARTMENTS = ['Engineering', 'HR', 'Finance', 'Operations', 'IT', 'Sales', 'Marketing', 'Legal'];
 const REGIONS     = ['North', 'South', 'East', 'West', 'Central'];
 const DEVICES     = ['Laptop', 'Desktop', 'Server', 'Tablet', 'Workstation'];
@@ -133,20 +139,46 @@ export default function AssessDevice() {
         <div className="space-y-4">
           {result ? (
             <>
+              {/* ML vs LLM dual prediction */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 space-y-3">
-                <h2 className="font-semibold text-gray-700">Risk Assessment</h2>
-                <div className="flex items-center gap-3">
-                  <RiskBadge level={result.risk.risk_level} />
-                  <span className="text-sm text-gray-500">Score: {(result.risk.risk_score * 100).toFixed(0)}%</span>
+                <h2 className="font-semibold text-gray-700">Model Predictions</h2>
+                <div className="grid grid-cols-2 gap-3">
+                  {/* ML model */}
+                  <div className="rounded-lg border border-purple-200 bg-purple-50 p-3 space-y-1.5">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-purple-500">ML Model</p>
+                    <RiskBadge level={result.risk.risk_level as 'high' | 'medium' | 'low'} />
+                    <ActionBadge action={result.recommendation.action as string} size="sm" />
+                    {result.risk.ml_scores && (
+                      <p className="text-[10px] text-purple-600 leading-tight">
+                        p(H)={result.risk.ml_scores.p_high.toFixed(2)} p(M)={result.risk.ml_scores.p_medium.toFixed(2)} p(L)={result.risk.ml_scores.p_low.toFixed(2)}
+                      </p>
+                    )}
+                    <p className="text-[10px] text-purple-400">{result.risk.eval_mode}</p>
+                  </div>
+                  {/* LLM prediction */}
+                  <div className={`rounded-lg border p-3 space-y-1.5 ${
+                    result.llm_prediction
+                      ? (RISK_COLORS[result.llm_prediction.risk_level] ?? 'bg-gray-50 border-gray-200 text-gray-700')
+                      : 'bg-gray-50 border-dashed border-gray-200'
+                  }`}>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide opacity-60">LLM (Qwen3)</p>
+                    {result.llm_prediction ? (
+                      <>
+                        <RiskBadge level={result.llm_prediction.risk_level as 'high' | 'medium' | 'low'} />
+                        <ActionBadge action={result.llm_prediction.action} size="sm" />
+                        <p className="text-[10px] italic opacity-80 leading-tight">{result.llm_prediction.reasoning}</p>
+                        {result.llm_prediction.agrees_with_ml !== undefined && (
+                          <p className={`text-[10px] font-medium ${result.llm_prediction.agrees_with_ml ? 'text-green-600' : 'text-amber-600'}`}>
+                            {result.llm_prediction.agrees_with_ml ? '✓ Agrees with ML' : '⚠ Differs from ML'}
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-xs text-gray-400 mt-2">Unavailable</p>
+                    )}
+                  </div>
                 </div>
                 <ConfidenceBar score={result.risk.risk_score} band={result.risk.confidence_band} />
-                <p className="text-xs text-gray-400">Mode: {result.risk.eval_mode}</p>
-                {result.risk.ml_scores && (
-                  <div className="bg-purple-50 rounded-lg p-3 text-xs text-purple-700">
-                    <p className="font-semibold mb-1">ML Model: {result.risk.ml_scores.ml_risk_label}</p>
-                    <p>p(high)={result.risk.ml_scores.p_high.toFixed(3)}  p(med)={result.risk.ml_scores.p_medium.toFixed(3)}  p(low)={result.risk.ml_scores.p_low.toFixed(3)}</p>
-                  </div>
-                )}
               </div>
 
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 space-y-3">

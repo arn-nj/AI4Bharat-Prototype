@@ -9,7 +9,7 @@ require no changes.
 
 Environment variables (read from .env or process environment):
   AWS_REGION               — Bedrock region (default: us-east-1)
-  BEDROCK_MODEL_ID         — Bedrock model identifier (default: qwen.qwen3-30b-a3b)
+  BEDROCK_MODEL_ID         — Bedrock model identifier (default: qwen.qwen3-next-80b-a3b)
   AWS_ACCESS_KEY_ID        — (optional if running on Lambda with IAM role)
   AWS_SECRET_ACCESS_KEY    — (optional if running on Lambda with IAM role)
 """
@@ -65,7 +65,7 @@ class LLMOpenAI:
             )
 
         self._region = os.getenv("BEDROCK_REGION") or os.getenv("AWS_REGION", "us-east-1")
-        self._model_id = os.getenv("BEDROCK_MODEL_ID", "qwen.qwen3-30b-a3b")
+        self._model_id = os.getenv("BEDROCK_MODEL_ID", "qwen.qwen3-next-80b-a3b")
 
         bedrock_config = Config(
             region_name=self._region,

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -66,6 +67,23 @@ def process_decision(
     }
 
     now = datetime.now(timezone.utc).isoformat()
+
+    # Generate LLM impact statement (non-blocking — never delays the commit)
+    llm_impact: Optional[str] = None
+    try:
+        from . import llm as llm_svc  # local import to avoid circular at module level
+        llm_impact = llm_svc.approval_impact(
+            decision=decision.value,
+            action=rec.action,
+            asset_id=asset.asset_id,
+            device_type=asset.device_type,
+            department=asset.department,
+            actor=actor,
+            rationale=rationale,
+        )
+    except Exception:
+        pass
+
     audit = AuditRow(
         recommendation_id=recommendation_id,
         asset_id=asset.asset_id,
@@ -77,6 +95,7 @@ def process_decision(
         new_state=new_state,
         asset_snapshot_json=json.dumps(asset_snapshot),
         recommendation_snapshot_json=json.dumps(rec_snapshot),
+        llm_impact=llm_impact,
         timestamp=now,
     )
     db.add(audit)
@@ -94,5 +113,6 @@ def process_decision(
         new_state=new_state,
         asset_snapshot=asset_snapshot,
         recommendation_snapshot=rec_snapshot,
+        llm_impact=llm_impact,
         timestamp=now,
     )

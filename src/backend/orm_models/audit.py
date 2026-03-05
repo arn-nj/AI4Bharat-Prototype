@@ -31,6 +31,7 @@ class AuditEntry(BaseModel):
     asset_snapshot: Dict[str, Any]
     recommendation_snapshot: Dict[str, Any]
     timestamp: str
+    llm_impact: Optional[str] = None
 
 
 class KPIOut(BaseModel):

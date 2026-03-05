@@ -1,6 +1,7 @@
 // API service layer — all calls to the FastAPI backend
-
-const BASE = '/api';
+// VITE_API_URL is injected at build time (e.g. https://pacyjst474.execute-api.us-east-1.amazonaws.com/dev)
+// In local dev it is empty, so requests fall through to the Vite proxy.
+const BASE = (import.meta.env.VITE_API_URL ?? '') + '/api';
 
 export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
@@ -8,8 +9,13 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
     ...options,
   });
   if (!res.ok) {
-    const detail = await res.json().catch(() => ({}));
-    throw new Error(detail?.detail ?? `HTTP ${res.status}`);
+    const body = await res.json().catch(() => ({}));
+    // FastAPI 422: detail is an array of validation errors
+    const detail = body?.detail;
+    const msg = Array.isArray(detail)
+      ? detail.map((e: { loc?: string[]; msg?: string }) => `${e.loc?.slice(1).join('.')}: ${e.msg}`).join('; ')
+      : (typeof detail === 'string' ? detail : `HTTP ${res.status}`);
+    throw new Error(msg);
   }
   return res.json() as Promise<T>;
 }
@@ -65,6 +71,30 @@ export const suggestPolicy = (settings: PolicySettings) =>
   apiFetch<{ suggestion: string }>('/ai/suggest-policy', {
     method: 'POST',
     body: JSON.stringify(settings),
+  });
+
+export const getFleetNarrative = () =>
+  apiFetch<{ narrative: string }>('/ai/fleet-narrative');
+
+export interface ComplianceDocRequest {
+  document_type: string;
+  region: string;
+  asset_id: string;
+  file_content: string;
+}
+
+export interface ComplianceDocResult {
+  summary: string;
+  extracted_entities: Record<string, string>;
+  missing_fields: string[];
+  verification_status: 'VERIFIED' | 'INCOMPLETE' | 'REJECTED';
+  recommendations: string[];
+}
+
+export const analyzeComplianceDoc = (payload: ComplianceDocRequest) =>
+  apiFetch<ComplianceDocResult>('/ai/analyze-doc', {
+    method: 'POST',
+    body: JSON.stringify(payload),
   });
 
 // ── Demo ──────────────────────────────────────────────────────
@@ -163,6 +193,14 @@ export interface AssessmentResultOut {
   asset_id: string;
   risk: RiskAssessmentOut;
   recommendation: RecommendationOut;
+  llm_prediction?: LLMPrediction | null;
+}
+
+export interface LLMPrediction {
+  risk_level: string;
+  action: string;
+  reasoning: string;
+  agrees_with_ml?: boolean | null;
 }
 
 export interface ApprovalQueueItem {
@@ -200,6 +238,7 @@ export interface AuditEntry {
   asset_snapshot: Record<string, unknown>;
   recommendation_snapshot: Record<string, unknown>;
   timestamp: string;
+  llm_impact?: string | null;
 }
 
 export interface AuditEntryRow {

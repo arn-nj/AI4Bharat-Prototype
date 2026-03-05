@@ -30,14 +30,22 @@ class RecommendationOut(BaseModel):
     created_at: str
 
 
+class LLMPrediction(BaseModel):
+    """Independent risk + action prediction made by the LLM."""
+    risk_level: str                  # high | medium | low
+    action: str                      # recycle | repair | refurbish | redeploy | resale
+    reasoning: str                   # 1-2 sentence justification
+    agrees_with_ml: Optional[bool] = None  # set after ML result is known
+
+
 class AssessmentResultOut(BaseModel):
     """Combined asset + risk + recommendation returned after form submission."""
-    asset: "AssetOut"  # noqa: F821
+    asset_id: str
     risk: "RiskAssessmentOut"  # noqa: F821
     recommendation: RecommendationOut
+    llm_prediction: Optional[LLMPrediction] = None
 
 
 # Resolve forward refs
-from .asset import AssetOut
 from .risk import RiskAssessmentOut
 AssessmentResultOut.model_rebuild()

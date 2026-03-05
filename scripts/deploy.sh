@@ -13,7 +13,7 @@ set -euo pipefail
 STAGE="${1:-dev}"
 STACK_NAME="ewaste-optimizer-${STAGE}"
 REGION="${AWS_REGION:-us-east-1}"
-MODEL_ID="${BEDROCK_MODEL_ID:-qwen.qwen3-30b-a3b}"
+MODEL_ID="${BEDROCK_MODEL_ID:-qwen.qwen3-next-80b-a3b}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FRONTEND_DIR="${REPO_ROOT}/src/frontend"
 

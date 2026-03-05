@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getApprovalQueue, decideApproval, type ApprovalQueueItem } from '../services/api';
+import { getApprovalQueue, decideApproval, type ApprovalQueueItem, type AuditEntry } from '../services/api';
 import ActionBadge from '../components/ActionBadge';
 import ConfidenceBar from '../components/ConfidenceBar';
 
@@ -10,6 +10,7 @@ export default function ApprovalQueue() {
   const [rationale, setRationale] = useState('');
   const [actor, setActor]   = useState('admin');
   const [submitting, setSubmitting] = useState(false);
+  const [lastDecision, setLastDecision] = useState<AuditEntry | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -22,7 +23,8 @@ export default function ApprovalQueue() {
     if (!selected || !rationale.trim()) return;
     setSubmitting(true);
     try {
-      await decideApproval(selected.recommendation_id, { decision, rationale, actor });
+      const result = await decideApproval(selected.recommendation_id, { decision, rationale, actor });
+      setLastDecision(result);
       setSelected(null);
       setRationale('');
       await load();
@@ -37,6 +39,30 @@ export default function ApprovalQueue() {
         <h1 className="text-2xl font-bold text-gray-900">Approval Queue</h1>
         <p className="text-sm text-gray-500 mt-0.5">{queue.length} recommendation{queue.length !== 1 ? 's' : ''} pending review</p>
       </div>
+
+      {/* Decision result banner */}
+      {lastDecision && (
+        <div className={`rounded-xl border p-4 flex items-start gap-3 ${lastDecision.decision === 'approved' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+          <span className={`text-lg flex-shrink-0 mt-0.5 ${lastDecision.decision === 'approved' ? 'text-green-600' : 'text-red-500'}`}>
+            {lastDecision.decision === 'approved' ? '✓' : '✗'}
+          </span>
+          <div className="flex-1 min-w-0">
+            <p className={`text-sm font-semibold ${lastDecision.decision === 'approved' ? 'text-green-800' : 'text-red-700'}`}>
+              {lastDecision.decision === 'approved' ? 'Approved' : 'Rejected'} · {lastDecision.asset_id} · {lastDecision.action}
+            </p>
+            {lastDecision.llm_impact ? (
+              <p className="text-sm text-gray-700 mt-1 leading-relaxed">{lastDecision.llm_impact}</p>
+            ) : (
+              <p className="text-xs text-gray-500 mt-0.5">Decision recorded by {lastDecision.actor}</p>
+            )}
+          </div>
+          <button
+            onClick={() => setLastDecision(null)}
+            className="text-gray-400 hover:text-gray-600 text-lg leading-none flex-shrink-0"
+            aria-label="Dismiss"
+          >×</button>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex justify-center py-16"><div className="animate-spin h-8 w-8 rounded-full border-b-2 border-green-600" /></div>

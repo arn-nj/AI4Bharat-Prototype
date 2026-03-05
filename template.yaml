@@ -23,7 +23,7 @@ Parameters:
 
   BedrockModelId:
     Type: String
-    Default: qwen.qwen3-30b-a3b
+    Default: qwen.qwen3-next-80b-a3b
     Description: Amazon Bedrock model identifier for LLM inference
 
   BedrockRegion:
