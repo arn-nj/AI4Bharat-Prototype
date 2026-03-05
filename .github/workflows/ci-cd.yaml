@@ -197,15 +197,20 @@ jobs:
         run: |
           API_URL="${{ steps.deploy.outputs.api_url }}"
           echo "Testing health endpoint: ${API_URL}/api/health"
-          
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${API_URL}/api/health" --max-time 30)
-          
-          if [ "$HTTP_CODE" -eq 200 ]; then
-            echo "✅ Health check passed (HTTP $HTTP_CODE)"
-          else
-            echo "❌ Health check failed (HTTP $HTTP_CODE)"
-            exit 1
-          fi
+
+          # Retry up to 5 times with 10s delay to allow Lambda cold start
+          for i in {1..5}; do
+            HTTP_CODE=$(curl -s -o /tmp/health_body.json -w "%{http_code}" "${API_URL}/api/health" --max-time 30)
+            echo "Attempt ${i}: HTTP ${HTTP_CODE}"
+            cat /tmp/health_body.json || true
+            if [ "$HTTP_CODE" -eq 200 ]; then
+              echo "✅ Health check passed (HTTP $HTTP_CODE)"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "❌ Health check failed after 5 attempts (last HTTP $HTTP_CODE)"
+          exit 1
 
       - name: Post-deployment summary
         run: |
@@ -343,15 +348,20 @@ jobs:
         run: |
           API_URL="${{ steps.deploy.outputs.api_url }}"
           echo "Testing health endpoint: ${API_URL}/api/health"
-          
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${API_URL}/api/health" --max-time 30)
-          
-          if [ "$HTTP_CODE" -eq 200 ]; then
-            echo "✅ Health check passed (HTTP $HTTP_CODE)"
-          else
-            echo "❌ Health check failed (HTTP $HTTP_CODE)"
-            exit 1
-          fi
+
+          # Retry up to 5 times with 10s delay to allow Lambda cold start
+          for i in {1..5}; do
+            HTTP_CODE=$(curl -s -o /tmp/health_body.json -w "%{http_code}" "${API_URL}/api/health" --max-time 30)
+            echo "Attempt ${i}: HTTP ${HTTP_CODE}"
+            cat /tmp/health_body.json || true
+            if [ "$HTTP_CODE" -eq 200 ]; then
+              echo "✅ Health check passed (HTTP $HTTP_CODE)"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "❌ Health check failed after 5 attempts (last HTTP $HTTP_CODE)"
+          exit 1
 
       - name: Post-deployment summary
         run: |

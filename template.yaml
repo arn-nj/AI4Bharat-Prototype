@@ -47,8 +47,12 @@ Parameters:
     Type: String
     NoEcho: true
     MinLength: 8
+    AllowedPattern: "[^/@\" ]+"
+    ConstraintDescription: >-
+      Must be at least 8 characters and must NOT contain '/', '@', '"', or spaces (RDS restriction).
     Description: >-
       Master password for the RDS PostgreSQL instance.
+      Forbidden characters: / @ " (space). 
       Store in GitHub secret: DB_PASSWORD_DEV (for develop branch) or DB_PASSWORD_PROD (for main branch).
 
 # ---------------------------------------------------------------------------

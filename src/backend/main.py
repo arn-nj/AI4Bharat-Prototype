@@ -65,19 +65,22 @@ app.add_middleware(
 
 @app.on_event("startup")
 def on_startup():
-    from .db.database import init_db, PolicyConfigRow, get_db
-    from sqlalchemy.orm import Session
-    init_db()
-    # Seed default policy config if not present
-    db_gen = get_db()
-    db: Session = next(db_gen)
     try:
-        if not db.query(PolicyConfigRow).first():
-            db.add(PolicyConfigRow())
-            db.commit()
-            log.info("Default policy config seeded.")
-    finally:
-        db.close()
+        from .db.database import init_db, PolicyConfigRow, get_db
+        from sqlalchemy.orm import Session
+        init_db()
+        # Seed default policy config if not present
+        db_gen = get_db()
+        db: Session = next(db_gen)
+        try:
+            if not db.query(PolicyConfigRow).first():
+                db.add(PolicyConfigRow())
+                db.commit()
+                log.info("Default policy config seeded.")
+        finally:
+            db.close()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("DB init skipped during startup (will retry per-request): %s", exc)
 
 
 # ── Routers ───────────────────────────────────────────────────────────────────
@@ -101,7 +104,20 @@ _META_PATH = _SRC_DIR / "model_training" / "models" / "model_metadata.json"
 
 @app.get("/api/health", tags=["system"])
 def health():
-    return {"status": "ok", "version": "2.0.0"}
+    from fastapi.responses import JSONResponse
+    db_status = "ok"
+    try:
+        from .db.database import get_db
+        db = next(get_db())
+        db.execute(__import__("sqlalchemy").text("SELECT 1"))
+        db.close()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Health check DB ping failed: %s", exc)
+        db_status = "unavailable"
+    return JSONResponse(
+        status_code=200,
+        content={"status": "ok", "version": "2.0.0", "db": db_status},
+    )
 
 
 @app.get("/api/model_info", tags=["system"])
