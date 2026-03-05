@@ -67,7 +67,7 @@ def _run_ml(asset: AssetRow) -> Optional[MLScores]:
 
         age = asset.age_months or 0
         batt_cycles = asset.battery_cycles or 0
-        batt_health = 100.0  # not in the simplified AssetRow — use default
+        batt_health = asset.battery_health_pct if asset.battery_health_pct is not None else 100.0
         thermal = asset.thermal_events_count or 0
         smart = asset.smart_sectors_reallocated or 0
         incidents = asset.total_incidents or 0
@@ -82,15 +82,21 @@ def _run_ml(asset: AssetRow) -> Optional[MLScores]:
         batt_deg = (100 - batt_health) / max(age, 1)
         thermal_pm = thermal / max(age, 1)
 
+        # Derive overheating: use stored value if present, else infer from thermal
+        if asset.overheating_issues is not None:
+            overheating = str(asset.overheating_issues).lower() in ("true", "1", "yes")
+        else:
+            overheating = thermal > 5
+
         row = {
             "device_type": asset.device_type,
-            "brand": "HP",           # not stored in simplified model — use default
+            "brand": asset.brand or "HP",
             "department": asset.department,
             "region": asset.region,
-            "usage_type": "Standard",
-            "os": "Windows 11",
-            "overheating_issues": str(thermal > 5),
-            "model_year": 2024 - (age // 12),
+            "usage_type": asset.usage_type or "Standard",
+            "os": asset.os or "Windows 11",
+            "overheating_issues": str(overheating),
+            "model_year": asset.model_year or (2024 - (age // 12)),
             "age_in_months": age,
             "battery_cycles": batt_cycles,
             "battery_health_percent": batt_health,
@@ -98,8 +104,8 @@ def _run_ml(asset: AssetRow) -> Optional[MLScores]:
             "smart_sectors_reallocated": smart,
             "thermal_events_count": thermal,
             "thermal_events_per_month": thermal_pm,
-            "daily_usage_hours": 8.0,
-            "performance_rating": 3,
+            "daily_usage_hours": asset.daily_usage_hours or 8.0,
+            "performance_rating": asset.performance_rating or 3,
             "total_incidents": incidents,
             "critical_incidents": critical,
             "high_incidents": high_i,

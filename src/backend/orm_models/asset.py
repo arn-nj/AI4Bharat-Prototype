@@ -41,6 +41,11 @@ class AssetCreate(BaseModel):
     purchase_date: Optional[str] = Field(None, description="ISO date string, e.g. 2022-03-15")
     department: str
     region: str
+    usage_type: Optional[str] = None             # Standard | Development | Creative | Intensive | Light
+    daily_usage_hours: Optional[float] = None
+    performance_rating: Optional[int] = None     # 1-5
+    battery_health_pct: Optional[float] = None   # 0-100
+    overheating_issues: Optional[bool] = None
     battery_cycles: Optional[int] = None
     smart_sectors_reallocated: Optional[int] = None
     thermal_events_count: Optional[int] = None
@@ -65,6 +70,11 @@ class AssetOut(BaseModel):
     current_state: str
     age_months: int
     data_completeness: float
+    usage_type: Optional[str] = None
+    daily_usage_hours: Optional[float] = None
+    performance_rating: Optional[int] = None
+    battery_health_pct: Optional[float] = None
+    overheating_issues: Optional[bool] = None
     battery_cycles: Optional[int] = None
     smart_sectors_reallocated: Optional[int] = None
     thermal_events_count: Optional[int] = None

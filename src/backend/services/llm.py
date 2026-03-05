@@ -382,6 +382,15 @@ def llm_predict(asset) -> Optional[Dict[str, Any]]:
         return None
 
 
+import re as _re
+
+
+def _strip_follow_ups(text: str) -> str:
+    """Remove any 'Suggested follow-up querie/questions' section the LLM may append."""
+    m = _re.search(r'suggested follow[- ]?up\b', text, _re.IGNORECASE)
+    return text[:m.start()].rstrip() if m else text
+
+
 def approval_impact(
     *,
     decision: str,
@@ -416,7 +425,7 @@ def approval_impact(
     )
     try:
         text = llm.generic_llm(system_msg, user_msg)
-        return text.strip() if text else ""
+        return _strip_follow_ups(text.strip()) if text else ""
     except Exception as exc:
         log.warning("approval_impact failed (%s)", exc)
         return ""

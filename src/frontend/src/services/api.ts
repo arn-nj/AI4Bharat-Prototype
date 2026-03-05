@@ -76,6 +76,15 @@ export const suggestPolicy = (settings: PolicySettings) =>
 export const getFleetNarrative = () =>
   apiFetch<{ narrative: string }>('/ai/fleet-narrative');
 
+export const getLLMOpinion = (assetId: string) =>
+  apiFetch<LLMPrediction>(`/ai/predict/${assetId}`);
+
+export const approveAll = (payload: { rationale: string; actor: string }) =>
+  apiFetch<{ approved: number; failed: number; message: string }>('/approvals/approve-all', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+
 export interface ComplianceDocRequest {
   document_type: string;
   region: string;
@@ -130,6 +139,11 @@ export interface AssetCreate {
   purchase_date?: string;
   department: string;
   region: string;
+  usage_type?: string;
+  daily_usage_hours?: number;
+  performance_rating?: number;
+  battery_health_pct?: number;
+  overheating_issues?: boolean;
   battery_cycles?: number;
   smart_sectors_reallocated?: number;
   thermal_events_count?: number;
@@ -217,6 +231,9 @@ export interface ApprovalQueueItem {
   policy_version: string;
   model_version: string;
   created_at: string;
+  risk_level?: string | null;
+  risk_score?: number | null;
+  confidence_band?: string | null;
 }
 
 export interface ApprovalRequest {
@@ -252,6 +269,7 @@ export interface AuditEntryRow {
   previous_state: string;
   new_state: string;
   timestamp: string;
+  llm_impact?: string | null;
 }
 
 export interface KPIOut {

@@ -167,7 +167,7 @@ jobs:
       - name: Build React frontend
         working-directory: src/frontend
         env:
-          VITE_BACKEND_URL: ${{ steps.deploy.outputs.api_url }}
+          VITE_API_URL: ${{ steps.deploy.outputs.api_url }}
         run: |
           npm ci
           npm run build

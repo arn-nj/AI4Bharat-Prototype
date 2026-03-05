@@ -14,6 +14,38 @@ const SUGGESTIONS = [
   'Explain the risk scoring methodology.',
 ];
 
+/** Splits LLM response into main body + clickable follow-up chips */
+function MessageContent({ content, onSend }: { content: string; onSend: (q: string) => void }) {
+  const idx = content.search(/suggested follow[- ]?up (queries|questions):?/i);
+  if (idx === -1) {
+    return <span className="whitespace-pre-wrap">{content}</span>;
+  }
+  const mainBody = content.slice(0, idx).trim();
+  const remainder = content.slice(idx).replace(/suggested follow[- ]?up (queries|questions):?\s*/i, '');
+  const followUps = remainder
+    .split('\n')
+    .map(l => l.replace(/^[\s\-•*\d.]+/, '').trim())
+    .filter(l => l.length > 5);
+  return (
+    <div>
+      <span className="whitespace-pre-wrap">{mainBody}</span>
+      {followUps.length > 0 && (
+        <div className="mt-3 pt-2.5 border-t border-gray-100">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-2">Follow-up suggestions</p>
+          <div className="flex flex-col gap-1.5">
+            {followUps.map((q, i) => (
+              <button key={i} onClick={() => onSend(q)}
+                className="text-xs text-left px-2.5 py-1.5 rounded-lg bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 transition-colors">
+                {q}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AIAssistant() {
   const [messages, setMessages] = useState<Message[]>([{
     role: 'assistant',
@@ -45,7 +77,7 @@ export default function AIAssistant() {
     <div className="flex flex-col h-full p-6 pb-0">
       <div className="mb-4">
         <h1 className="text-2xl font-bold text-gray-900">AI Assistant</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Powered by Amazon Bedrock · Qwen3 30B</p>
+        <p className="text-sm text-gray-500 mt-0.5">Powered by Amazon Bedrock · Qwen3 80B</p>
       </div>
 
       {/* Suggestions */}
@@ -72,7 +104,10 @@ export default function AIAssistant() {
                 ? 'bg-green-600 text-white rounded-br-sm'
                 : 'bg-white border border-gray-100 text-gray-700 rounded-bl-sm shadow-sm'
             }`}>
-              {m.content}
+              {m.role === 'assistant'
+                ? <MessageContent content={m.content} onSend={send} />
+                : m.content
+              }
             </div>
             {m.role === 'user' && (
               <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center shrink-0">
@@ -98,7 +133,7 @@ export default function AIAssistant() {
         <div ref={bottomRef} />
       </div>
 
-      {/* Input bar — sticky at bottom */}
+      {/* Input bar */}
       <div className="bg-white border-t border-gray-100 py-4 flex gap-3">
         <input
           value={input}

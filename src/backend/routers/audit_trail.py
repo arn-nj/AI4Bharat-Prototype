@@ -40,6 +40,7 @@ def list_audit(
             "previous_state": r.previous_state,
             "new_state": r.new_state,
             "timestamp": r.timestamp,
+            "llm_impact": r.llm_impact,
         }
         for r in rows
     ]

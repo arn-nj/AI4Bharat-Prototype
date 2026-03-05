@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from pydantic import BaseModel
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from sqlalchemy.orm import Session
 
-from ..db.database import get_db
+from ..db.database import AssetRow, get_db
 from ..orm_models.audit import KPIOut
+from ..orm_models.recommendation import LLMPrediction
 from ..services import kpi as kpi_svc
 from ..services import llm as llm_svc
 
@@ -77,3 +78,22 @@ def analyze_doc(payload: AnalyzeDocRequest):
         file_content=payload.file_content,
     )
     return result
+
+
+@router.get("/predict/{asset_id}", response_model=LLMPrediction)
+def predict_asset(asset_id: str, db: Session = Depends(get_db)):
+    """LLM independent risk prediction for an existing asset (second opinion)."""
+    asset = db.query(AssetRow).filter_by(asset_id=asset_id).first()
+    if not asset:
+        raise HTTPException(404, f"Asset {asset_id} not found")
+    result = llm_svc.llm_predict(asset)
+    if not result or not isinstance(result, dict):
+        return LLMPrediction(
+            risk_level="unknown", action="unknown",
+            reasoning="LLM service unavailable — try again shortly.",
+        )
+    return LLMPrediction(
+        risk_level=result.get("risk_level", "unknown"),
+        action=result.get("action", "unknown"),
+        reasoning=result.get("reasoning", ""),
+    )
