@@ -2,10 +2,10 @@
 
 A decision-support system that combines **ML risk scoring**, **deterministic policy rules**, and **Amazon Bedrock LLM** to recommend lifecycle actions (Redeploy / Repair / Refurbish / Resale / Recycle) for IT assets.
 
-| Environment | Frontend | API |
-|---|---|---|
-| **Production** | https://d1mf9ava5cnnbs.cloudfront.net | https://jh4ppmtagk.execute-api.us-east-1.amazonaws.com/prod |
-| **Dev** | https://d38pk4y15auu3k.cloudfront.net | https://pacyjst474.execute-api.us-east-1.amazonaws.com/dev |
+| Environment | Frontend | API | Swagger |
+|---|---|---|---|
+| **Production** | https://d1mf9ava5cnnbs.cloudfront.net | https://jh4ppmtagk.execute-api.us-east-1.amazonaws.com/prod | https://jh4ppmtagk.execute-api.us-east-1.amazonaws.com/prod/docs |
+| **Dev** | https://d38pk4y15auu3k.cloudfront.net | https://pacyjst474.execute-api.us-east-1.amazonaws.com/dev | https://pacyjst474.execute-api.us-east-1.amazonaws.com/dev/docs |
 
 ---
 

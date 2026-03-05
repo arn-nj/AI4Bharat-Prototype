@@ -63,7 +63,8 @@ app.add_middleware(
 
 # ── Strip API Gateway stage prefix ───────────────────────────────────────────
 # HTTP API v2 passes rawPath including the stage (e.g. /dev/api/health).
-# This middleware strips it so FastAPI routes correctly.
+# Strip the stage from the path so FastAPI routes correctly, but keep it in
+# root_path so Swagger UI generates correct absolute URLs like /dev/openapi.json.
 @app.middleware("http")
 async def strip_stage_prefix(request: Request, call_next):
     stage = os.getenv("STAGE", "")
@@ -72,8 +73,10 @@ async def strip_stage_prefix(request: Request, call_next):
         prefix = f"/{stage}"
         if path.startswith(prefix + "/"):
             request.scope["path"] = path[len(prefix):]
+            request.scope["root_path"] = prefix
         elif path == prefix:
             request.scope["path"] = "/"
+            request.scope["root_path"] = prefix
     return await call_next(request)
 
 
