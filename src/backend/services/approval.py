@@ -29,6 +29,8 @@ def process_decision(
     rationale: str,
     actor: str,
     db: Session,
+    *,
+    generate_llm_impact: bool = True,
 ) -> AuditEntry:
     """Process an approval/rejection and write an immutable audit record."""
     rec = db.query(RecommendationRow).filter_by(recommendation_id=recommendation_id).first()
@@ -70,19 +72,20 @@ def process_decision(
 
     # Generate LLM impact statement (non-blocking — never delays the commit)
     llm_impact: Optional[str] = None
-    try:
-        from . import llm as llm_svc  # local import to avoid circular at module level
-        llm_impact = llm_svc.approval_impact(
-            decision=decision.value,
-            action=rec.action,
-            asset_id=asset.asset_id,
-            device_type=asset.device_type,
-            department=asset.department,
-            actor=actor,
-            rationale=rationale,
-        )
-    except Exception:
-        pass
+    if generate_llm_impact:
+        try:
+            from . import llm as llm_svc  # local import to avoid circular at module level
+            llm_impact = llm_svc.approval_impact(
+                decision=decision.value,
+                action=rec.action,
+                asset_id=asset.asset_id,
+                device_type=asset.device_type,
+                department=asset.department,
+                actor=actor,
+                rationale=rationale,
+            )
+        except Exception:
+            pass
 
     audit = AuditRow(
         recommendation_id=recommendation_id,

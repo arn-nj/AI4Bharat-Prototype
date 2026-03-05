@@ -33,6 +33,12 @@ class AssetRow(Base):
     age_months = Column(Integer, nullable=False)
     data_completeness = Column(Float, nullable=False, default=0.0)
     updated_at = Column(String, nullable=True)
+    # device characteristics
+    usage_type = Column(String, nullable=True)          # Standard | Development | Creative | Intensive | Light
+    daily_usage_hours = Column(Float, nullable=True)
+    performance_rating = Column(Integer, nullable=True)  # 1-5
+    battery_health_pct = Column(Float, nullable=True)    # 0-100
+    overheating_issues = Column(String, nullable=True)   # 'True' | 'False'
     # telemetry (nullable = graceful degradation)
     battery_cycles = Column(Integer, nullable=True)
     smart_sectors_reallocated = Column(Integer, nullable=True)
@@ -145,12 +151,37 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 def init_db():
-    """Create tables and seed default policy config."""
+    """Create tables, seed default policy config, and run lightweight migrations."""
     Base.metadata.create_all(bind=engine)
+    _migrate_add_columns()
     with SessionLocal() as db:
         if not db.query(PolicyConfigRow).first():
             db.add(PolicyConfigRow())
             db.commit()
+
+
+def _migrate_add_columns():
+    """ADD COLUMN IF NOT EXISTS for columns added after initial schema creation."""
+    from sqlalchemy import text
+    new_cols = [
+        ("assets", "usage_type",         "VARCHAR"),
+        ("assets", "daily_usage_hours",   "FLOAT"),
+        ("assets", "performance_rating",  "INTEGER"),
+        ("assets", "battery_health_pct",  "FLOAT"),
+        ("assets", "overheating_issues",  "VARCHAR"),
+    ]
+    with engine.connect() as conn:
+        for table, col, col_type in new_cols:
+            try:
+                if _IS_SQLITE:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"))
+                else:
+                    conn.execute(text(
+                        f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {col_type}"
+                    ))
+                conn.commit()
+            except Exception:
+                pass  # column already exists — safe to ignore
 
 
 def get_db():

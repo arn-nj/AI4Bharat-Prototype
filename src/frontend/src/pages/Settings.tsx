@@ -93,7 +93,7 @@ export default function Settings() {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className={labelClass}>Number of devices</label>
-            <input type="number" className={inputClass} value={count} min={1} max={50} onChange={e => setCount(Number(e.target.value))} />
+            <input type="number" className={inputClass} value={count} min={1} max={500} onChange={e => setCount(Number(e.target.value))} />
           </div>
           <div>
             <label className={labelClass}>Department (optional)</label>

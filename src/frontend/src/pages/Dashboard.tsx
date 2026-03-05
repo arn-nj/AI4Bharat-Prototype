@@ -30,23 +30,43 @@ export default function Dashboard() {
   const [countdown, setCountdown] = useState(REFRESH_INTERVAL_SEC);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Track last fleet size so we only regenerate narrative when fleet changes
+  const narrativeFleetSizeRef = useRef<number>(-1);
 
+  /** Lightweight KPI-only refresh — does NOT re-trigger LLM narrative */
+  const loadKPIs = async () => {
+    setLoading(true);
+    try {
+      const [k, m] = await Promise.all([getKPIs(), getModelInfo()]);
+      setKpis(k);
+      setModelInfo(m);
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /** Fetch narrative only when fleet actually changes size */
+  const refreshNarrative = async (totalAssets: number, force = false) => {
+    if (!force && narrativeFleetSizeRef.current === totalAssets) return;
+    narrativeFleetSizeRef.current = totalAssets;
+    if (totalAssets === 0) { setNarrative(''); return; }
+    setNarrativeLoading(true);
+    getFleetNarrative()
+      .then(r => setNarrative(r.narrative ?? ''))
+      .catch(() => {})
+      .finally(() => setNarrativeLoading(false));
+  };
+
+  /** Initial full load */
   const load = async () => {
     setLoading(true);
     try {
       const [k, m] = await Promise.all([getKPIs(), getModelInfo()]);
       setKpis(k);
       setModelInfo(m);
-      // Fetch narrative in the background after KPIs land
-      if (k && k.total_assets > 0) {
-        setNarrativeLoading(true);
-        getFleetNarrative()
-          .then(r => setNarrative(r.narrative ?? ''))
-          .catch(() => setNarrative(''))
-          .finally(() => setNarrativeLoading(false));
-      } else {
-        setNarrative('');
-      }
+      if (k) refreshNarrative(k.total_assets);
     } catch {
       // ignore
     } finally {
@@ -56,12 +76,12 @@ export default function Dashboard() {
 
   const resetCountdown = () => setCountdown(REFRESH_INTERVAL_SEC);
 
-  // Auto-refresh effect
+  // Auto-refresh effect — only refreshes KPIs, NOT the narrative
   useEffect(() => {
     if (autoRefresh) {
       resetCountdown();
       intervalRef.current = setInterval(() => {
-        load();
+        loadKPIs();
         resetCountdown();
       }, REFRESH_INTERVAL_SEC * 1000);
       countdownRef.current = setInterval(() => {
@@ -199,7 +219,18 @@ export default function Dashboard() {
             <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-100 rounded-xl p-4 flex items-start gap-3">
               <BrainCircuit size={20} className="text-indigo-500 flex-shrink-0 mt-0.5" />
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-semibold text-indigo-600 uppercase tracking-wide mb-1">AI Fleet Summary</p>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs font-semibold text-indigo-600 uppercase tracking-wide">AI Fleet Summary</p>
+                  <button
+                    onClick={() => kpis && refreshNarrative(kpis.total_assets, true)}
+                    disabled={narrativeLoading}
+                    className="text-[10px] text-indigo-500 hover:text-indigo-700 flex items-center gap-1 disabled:opacity-40"
+                    title="Regenerate summary"
+                  >
+                    <RefreshCw size={11} className={narrativeLoading ? 'animate-spin' : ''} />
+                    Refresh
+                  </button>
+                </div>
                 {narrativeLoading ? (
                   <div className="flex items-center gap-2 text-sm text-gray-500">
                     <span className="inline-block w-3 h-3 rounded-full border-2 border-indigo-400 border-t-transparent animate-spin" />

@@ -25,10 +25,11 @@ def _age_from_purchase(purchase_date: str) -> int:
 
 
 def _data_completeness(payload: AssetCreate) -> float:
-    telemetry_fields = [payload.battery_cycles, payload.smart_sectors_reallocated, payload.thermal_events_count]
+    telemetry_fields = [payload.battery_cycles, payload.smart_sectors_reallocated, payload.thermal_events_count,
+                        payload.battery_health_pct, payload.performance_rating]
     ticket_fields    = [payload.total_incidents, payload.critical_incidents, payload.avg_resolution_time_hours]
     filled = sum(1 for f in telemetry_fields + ticket_fields if f is not None)
-    return round(filled / 6, 2)
+    return round(filled / 8, 2)
 
 
 @router.post("", response_model=AssetOut, status_code=201)
@@ -50,6 +51,11 @@ def create_asset(payload: AssetCreate, db: Session = Depends(get_db)):
         region=payload.region,
         age_months=age,
         data_completeness=completeness,
+        usage_type=payload.usage_type,
+        daily_usage_hours=payload.daily_usage_hours,
+        performance_rating=payload.performance_rating,
+        battery_health_pct=payload.battery_health_pct,
+        overheating_issues=str(payload.overheating_issues) if payload.overheating_issues is not None else None,
         battery_cycles=payload.battery_cycles,
         smart_sectors_reallocated=payload.smart_sectors_reallocated,
         thermal_events_count=payload.thermal_events_count,

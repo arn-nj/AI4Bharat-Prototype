@@ -10,21 +10,26 @@ const RISK_COLORS: Record<string, string> = {
   low:    'bg-green-50 border-green-200 text-green-700',
 };
 
-const DEPARTMENTS = ['Engineering', 'HR', 'Finance', 'Operations', 'IT', 'Sales', 'Marketing', 'Legal'];
-const REGIONS     = ['North', 'South', 'East', 'West', 'Central'];
-const DEVICES     = ['Laptop', 'Desktop', 'Server', 'Tablet', 'Workstation'];
+const DEPARTMENTS  = ['Engineering', 'HR', 'Finance', 'Operations', 'IT', 'Sales', 'Marketing', 'Legal'];
+const OFFICE_LOCATIONS = [
+  'Mumbai', 'Bengaluru', 'Chennai', 'Hyderabad', 'Delhi NCR',
+  'Pune', 'Kolkata', 'Ahmedabad', 'Kochi', 'Noida',
+];
+const DEVICES = [
+  'Laptop', 'Desktop', 'Server', 'Tablet', 'Workstation',
+  'Printer', 'Network Device', 'Mobile Phone', 'Monitor', 'Projector',
+];
+const OS_OPTIONS   = ['Windows 11', 'Windows 10', 'macOS 14', 'Ubuntu 22.04', 'ChromeOS', 'Android 14', 'iOS 17'];
+const USAGE_TYPES  = ['Standard', 'Development', 'Creative', 'Intensive', 'Light'];
 
 const DEFAULT_FORM: AssetCreate = {
   device_type: 'Laptop',
   department: 'IT',
-  region: 'North',
+  region: 'Bengaluru',
   brand: '',
-  model_year: 2021,
-  total_incidents: undefined,
-  critical_incidents: undefined,
-  battery_cycles: undefined,
-  thermal_events_count: undefined,
-  smart_sectors_reallocated: undefined,
+  model_year: new Date().getFullYear(),
+  os: 'Windows 11',
+  usage_type: 'Standard',
 };
 
 export default function AssessDevice() {
@@ -56,16 +61,18 @@ export default function AssessDevice() {
   const inputClass = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500';
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-6">
+    <div className="p-6 max-w-5xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Assess Device</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Submit device telemetry and ticket data for AI-powered risk assessment</p>
+        <p className="text-sm text-gray-500 mt-0.5">Submit device details and telemetry for AI-powered risk assessment</p>
       </div>
 
       <div className="grid md:grid-cols-2 gap-6">
         {/* Form */}
         <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 space-y-4">
-          <h2 className="font-semibold text-gray-700">Device Details</h2>
+
+          {/* ── Identity & Usage ─────────────────────── */}
+          <h2 className="font-semibold text-gray-700 text-sm uppercase tracking-wide text-gray-400">Identity &amp; Usage</h2>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -88,39 +95,109 @@ export default function AssessDevice() {
               </select>
             </div>
             <div>
-              <label className={labelClass}>Region *</label>
+              <label className={labelClass}>State / Office Location *</label>
               <select className={inputClass} value={form.region} onChange={e => set('region', e.target.value)}>
-                {REGIONS.map(r => <option key={r}>{r}</option>)}
+                {OFFICE_LOCATIONS.map(r => <option key={r}>{r}</option>)}
               </select>
             </div>
           </div>
 
-          <div>
-            <label className={labelClass}>Model Year</label>
-            <input type="number" className={inputClass} value={form.model_year ?? ''} onChange={e => set('model_year', Number(e.target.value))} min={2000} max={2025} />
-          </div>
-
-          <h2 className="font-semibold text-gray-700 pt-2">Telemetry (optional)</h2>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className={labelClass}>Battery Cycles</label>
-              <input type="number" className={inputClass} value={form.battery_cycles ?? ''} onChange={e => set('battery_cycles', e.target.value ? Number(e.target.value) : undefined)} />
+              <label className={labelClass}>OS</label>
+              <select className={inputClass} value={form.os ?? ''} onChange={e => set('os', e.target.value)}>
+                <option value="">Select…</option>
+                {OS_OPTIONS.map(o => <option key={o}>{o}</option>)}
+              </select>
             </div>
             <div>
-              <label className={labelClass}>Thermal Events</label>
-              <input type="number" className={inputClass} value={form.thermal_events_count ?? ''} onChange={e => set('thermal_events_count', e.target.value ? Number(e.target.value) : undefined)} />
+              <label className={labelClass}>Usage Type</label>
+              <select className={inputClass} value={form.usage_type ?? ''} onChange={e => set('usage_type', e.target.value)}>
+                <option value="">Select…</option>
+                {USAGE_TYPES.map(u => <option key={u}>{u}</option>)}
+              </select>
             </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className={labelClass}>Model Year</label>
+              <input type="number" className={inputClass} value={form.model_year ?? ''} onChange={e => set('model_year', Number(e.target.value))} min={2000} max={new Date().getFullYear()} />
+            </div>
+            <div>
+              <label className={labelClass}>Daily Usage (hrs)</label>
+              <input type="number" className={inputClass} value={form.daily_usage_hours ?? ''} onChange={e => set('daily_usage_hours', e.target.value ? Number(e.target.value) : undefined)} min={0} max={24} step={0.5} />
+            </div>
+            <div>
+              <label className={labelClass}>Performance (1-5)</label>
+              <input type="number" className={inputClass} value={form.performance_rating ?? ''} onChange={e => set('performance_rating', e.target.value ? Number(e.target.value) : undefined)} min={1} max={5} />
+            </div>
+          </div>
+
+          {/* ── Hardware Health ───────────────────────── */}
+          <h2 className="font-semibold text-gray-700 text-sm uppercase tracking-wide text-gray-400 pt-2">Hardware Health &amp; Telemetry</h2>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={labelClass}>Battery Health (%)</label>
+              <input type="number" className={inputClass} value={form.battery_health_pct ?? ''} onChange={e => set('battery_health_pct', e.target.value ? Number(e.target.value) : undefined)} min={0} max={100} />
+            </div>
+            <div>
+              <label className={labelClass}>Battery Cycles</label>
+              <input type="number" className={inputClass} value={form.battery_cycles ?? ''} onChange={e => set('battery_cycles', e.target.value ? Number(e.target.value) : undefined)} min={0} />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className={labelClass}>SMART Sectors</label>
-              <input type="number" className={inputClass} value={form.smart_sectors_reallocated ?? ''} onChange={e => set('smart_sectors_reallocated', e.target.value ? Number(e.target.value) : undefined)} />
+              <input type="number" className={inputClass} value={form.smart_sectors_reallocated ?? ''} onChange={e => set('smart_sectors_reallocated', e.target.value ? Number(e.target.value) : undefined)} min={0} />
             </div>
+            <div>
+              <label className={labelClass}>Thermal Events (90d)</label>
+              <input type="number" className={inputClass} value={form.thermal_events_count ?? ''} onChange={e => set('thermal_events_count', e.target.value ? Number(e.target.value) : undefined)} min={0} />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 cursor-pointer select-none text-sm text-gray-600">
+              <input
+                type="checkbox"
+                checked={form.overheating_issues ?? false}
+                onChange={e => set('overheating_issues', e.target.checked)}
+                className="w-4 h-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
+              />
+              Overheating Issues Reported
+            </label>
+          </div>
+
+          {/* ── Incidents ─────────────────────────────── */}
+          <h2 className="font-semibold text-gray-700 text-sm uppercase tracking-wide text-gray-400 pt-2">Incidents (90d)</h2>
+
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className={labelClass}>Total Incidents</label>
-              <input type="number" className={inputClass} value={form.total_incidents ?? ''} onChange={e => set('total_incidents', e.target.value ? Number(e.target.value) : undefined)} />
+              <input type="number" className={inputClass} value={form.total_incidents ?? ''} onChange={e => set('total_incidents', e.target.value ? Number(e.target.value) : undefined)} min={0} />
             </div>
             <div>
-              <label className={labelClass}>Critical Incidents</label>
-              <input type="number" className={inputClass} value={form.critical_incidents ?? ''} onChange={e => set('critical_incidents', e.target.value ? Number(e.target.value) : undefined)} />
+              <label className={labelClass}>Critical</label>
+              <input type="number" className={inputClass} value={form.critical_incidents ?? ''} onChange={e => set('critical_incidents', e.target.value ? Number(e.target.value) : undefined)} min={0} />
+            </div>
+            <div>
+              <label className={labelClass}>High</label>
+              <input type="number" className={inputClass} value={form.high_incidents ?? ''} onChange={e => set('high_incidents', e.target.value ? Number(e.target.value) : undefined)} min={0} />
+            </div>
+            <div>
+              <label className={labelClass}>Medium</label>
+              <input type="number" className={inputClass} value={form.medium_incidents ?? ''} onChange={e => set('medium_incidents', e.target.value ? Number(e.target.value) : undefined)} min={0} />
+            </div>
+            <div>
+              <label className={labelClass}>Low</label>
+              <input type="number" className={inputClass} value={form.low_incidents ?? ''} onChange={e => set('low_incidents', e.target.value ? Number(e.target.value) : undefined)} min={0} />
+            </div>
+            <div>
+              <label className={labelClass}>Avg Resolution (hrs)</label>
+              <input type="number" className={inputClass} value={form.avg_resolution_time_hours ?? ''} onChange={e => set('avg_resolution_time_hours', e.target.value ? Number(e.target.value) : undefined)} min={0} step={0.5} />
             </div>
           </div>
 

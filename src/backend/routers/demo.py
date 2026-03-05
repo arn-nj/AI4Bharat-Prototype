@@ -18,7 +18,7 @@ router = APIRouter(prefix="/api/demo", tags=["demo"])
 
 
 class GenerateRequest(BaseModel):
-    count: int = Field(default=10, ge=1, le=50)
+    count: int = Field(default=10, ge=1, le=500)
     department: Optional[str] = None
     region: Optional[str] = None
     auto_assess: bool = Field(default=True, description="Run assessment on generated assets")
