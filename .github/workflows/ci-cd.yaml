@@ -119,6 +119,17 @@ jobs:
       - name: Deploy backend to dev
         id: deploy
         run: |
+          # Resolve VPC: prefer the secret if set, otherwise fall back to the default VPC
+          VPC_ID="${{ secrets.VPC_ID }}"
+          if [ -z "$VPC_ID" ]; then
+            VPC_ID=$(aws ec2 describe-vpcs \
+              --filters Name=isDefault,Values=true \
+              --query 'Vpcs[0].VpcId' \
+              --output text \
+              --region ${{ env.AWS_REGION }})
+            echo "VPC_ID secret not set — using default VPC: ${VPC_ID}"
+          fi
+
           sam deploy \
             --stack-name ewaste-optimizer-dev \
             --resolve-s3 \
@@ -131,7 +142,7 @@ jobs:
               StageName=dev \
               BedrockModelId=${{ vars.BEDROCK_MODEL_ID || 'qwen.qwen3-30b-a3b' }} \
               BedrockRegion=${{ env.AWS_REGION }} \
-              VpcId=${{ secrets.VPC_ID }} \
+              VpcId="${VPC_ID}" \
               DBUsername=${{ vars.DB_USERNAME || 'ewasteadmin' }} \
               DBPassword=${{ secrets.DB_PASSWORD_DEV }}
 
@@ -257,6 +268,16 @@ jobs:
       - name: Deploy backend to production
         id: deploy
         run: |
+          VPC_ID="${{ secrets.VPC_ID }}"
+          if [ -z "$VPC_ID" ]; then
+            VPC_ID=$(aws ec2 describe-vpcs \
+              --filters Name=isDefault,Values=true \
+              --query 'Vpcs[0].VpcId' \
+              --output text \
+              --region ${{ env.AWS_REGION }})
+            echo "VPC_ID secret not set — using default VPC: ${VPC_ID}"
+          fi
+
           sam deploy \
             --stack-name ewaste-optimizer-prod \
             --resolve-s3 \
@@ -269,7 +290,7 @@ jobs:
               StageName=prod \
               BedrockModelId=${{ vars.BEDROCK_MODEL_ID || 'qwen.qwen3-30b-a3b' }} \
               BedrockRegion=${{ env.AWS_REGION }} \
-              VpcId=${{ secrets.VPC_ID }} \
+              VpcId="${VPC_ID}" \
               DBUsername=${{ vars.DB_USERNAME || 'ewasteadmin' }} \
               DBPassword=${{ secrets.DB_PASSWORD_PROD }}
 
