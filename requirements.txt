@@ -24,3 +24,4 @@ numpy>=1.24.0
 
 # ── LLM engine ───────────────────────────────────────────────────────────
 requests>=2.31.0        # Bedrock REST fallback in llm_engine/llm.py
+python-dotenv>=1.0.0    # loads .env locally; no-op on Lambda (env vars set via function config)
