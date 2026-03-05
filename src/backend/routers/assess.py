@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from sqlalchemy.orm import Session
@@ -23,6 +25,10 @@ def assess_asset(asset_id: str, db: Session = Depends(get_db)):
 
     risk_result = risk_engine.assess_asset(asset, db)
     rec_result  = rec_svc.generate_recommendation(asset, risk_result, db)
+
+    # Stamp last-assessed time so inventory can sort by it
+    asset.updated_at = datetime.now(timezone.utc).isoformat()
+    db.commit()
 
     # LLM independent prediction (parallel second opinion)
     llm_pred_raw = llm_svc.llm_predict(asset)
