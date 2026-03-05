@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from sqlalchemy.orm import Session
 
-from ..db.database import AssetRow, get_db
+from ..db.database import AssetRow, RecommendationRow, get_db
 from ..orm_models.audit import KPIOut
 from ..orm_models.recommendation import LLMPrediction
 from ..services import kpi as kpi_svc
@@ -78,6 +78,34 @@ def analyze_doc(payload: AnalyzeDocRequest):
         file_content=payload.file_content,
     )
     return result
+
+
+@router.get("/predict/{asset_id}", response_model=LLMPrediction)
+def predict_asset(asset_id: str, db: Session = Depends(get_db)):
+    """Return (and persist) an independent LLM risk + action opinion for an asset."""
+    import json
+    asset = db.query(AssetRow).filter_by(asset_id=asset_id).first()
+    if not asset:
+        raise HTTPException(404, f"Asset {asset_id} not found")
+
+    raw = llm_svc.llm_predict(asset)
+    if not raw:
+        raise HTTPException(503, "LLM prediction unavailable")
+
+    prediction = LLMPrediction(**raw)
+
+    # Persist on the most recent recommendation so approval service can reference it
+    rec = (
+        db.query(RecommendationRow)
+        .filter_by(asset_id=asset_id)
+        .order_by(RecommendationRow.created_at.desc())
+        .first()
+    )
+    if rec:
+        rec.llm_prediction_json = json.dumps(prediction.model_dump())
+        db.commit()
+
+    return prediction
 
 
 @router.get("/predict/{asset_id}", response_model=LLMPrediction)

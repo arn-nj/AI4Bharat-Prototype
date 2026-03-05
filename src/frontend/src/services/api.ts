@@ -273,6 +273,8 @@ export interface AuditEntryRow {
   new_state: string;
   timestamp: string;
   llm_impact?: string | null;
+  llm_pre_decision_json?: string | null;
+  original_action?: string | null;
 }
 
 export interface KPIOut {

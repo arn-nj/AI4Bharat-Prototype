@@ -81,6 +81,7 @@ class RecommendationRow(Base):
     rationale = Column(Text, nullable=False)
     supporting_signals_json = Column(Text, nullable=False, default="[]")
     itsm_task_json = Column(Text, nullable=True)   # LLM-generated ITSM task (JSON)
+    llm_prediction_json = Column(Text, nullable=True)  # stored AI pre-decision opinion
     policy_version = Column(String, nullable=False, default="v1.0")
     model_version = Column(String, nullable=False, default="policy-only")
     created_at = Column(String, default=lambda: datetime.now(timezone.utc).isoformat())
@@ -100,6 +101,8 @@ class AuditRow(Base):
     asset_snapshot_json = Column(Text, nullable=False)
     recommendation_snapshot_json = Column(Text, nullable=False)
     llm_impact = Column(Text, nullable=True)
+    llm_pre_decision_json = Column(Text, nullable=True)  # AI opinion fetched before decision
+    original_action = Column(String, nullable=True)       # set when manager overrides action
     timestamp = Column(String, default=lambda: datetime.now(timezone.utc).isoformat())
 
 
@@ -165,12 +168,15 @@ def _migrate_add_columns():
     """ADD COLUMN IF NOT EXISTS for columns added after initial schema creation."""
     from sqlalchemy import text
     new_cols = [
-        ("assets", "usage_type",         "VARCHAR"),
-        ("assets", "daily_usage_hours",   "FLOAT"),
-        ("assets", "performance_rating",  "INTEGER"),
-        ("assets", "battery_health_pct",  "FLOAT"),
-        ("assets", "overheating_issues",  "VARCHAR"),
-        ("assets", "serial_number",       "VARCHAR"),
+        ("assets", "usage_type",                     "VARCHAR"),
+        ("assets", "daily_usage_hours",               "FLOAT"),
+        ("assets", "performance_rating",              "INTEGER"),
+        ("assets", "battery_health_pct",              "FLOAT"),
+        ("assets", "overheating_issues",              "VARCHAR"),
+        ("assets", "serial_number",                   "VARCHAR"),
+        ("recommendations", "llm_prediction_json",    "TEXT"),
+        ("audit_trail", "llm_pre_decision_json",      "TEXT"),
+        ("audit_trail", "original_action",            "VARCHAR"),
     ]
     with engine.connect() as conn:
         for table, col, col_type in new_cols:

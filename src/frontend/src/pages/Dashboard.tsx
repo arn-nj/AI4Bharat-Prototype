@@ -9,6 +9,10 @@ import KPICard from '../components/KPICard';
 
 const REFRESH_INTERVAL_SEC = 30;
 
+// Module-level cache — survives component remounts during navigation
+let _narrativeCache = '';
+let _narrativeCacheFleetSize = -1;
+
 const ACTION_COLORS: Record<string, string> = {
   recycle:   '#ef4444',
   repair:    '#f97316',
@@ -49,12 +53,20 @@ export default function Dashboard() {
 
   /** Fetch narrative only when fleet actually changes size */
   const refreshNarrative = async (totalAssets: number, force = false) => {
-    if (!force && narrativeFleetSizeRef.current === totalAssets) return;
-    narrativeFleetSizeRef.current = totalAssets;
+    if (!force && _narrativeCacheFleetSize === totalAssets && _narrativeCache) {
+      setNarrative(_narrativeCache);
+      return;
+    }
     if (totalAssets === 0) { setNarrative(''); return; }
+    narrativeFleetSizeRef.current = totalAssets;
     setNarrativeLoading(true);
     getFleetNarrative()
-      .then(r => setNarrative(r.narrative ?? ''))
+      .then(r => {
+        const text = r.narrative ?? '';
+        _narrativeCache = text;
+        _narrativeCacheFleetSize = totalAssets;
+        setNarrative(text);
+      })
       .catch(() => {})
       .finally(() => setNarrativeLoading(false));
   };

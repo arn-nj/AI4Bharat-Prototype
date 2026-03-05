@@ -11,7 +11,7 @@ function AuditRow({ e }: { e: AuditEntryRow }) {
   const [expanded, setExpanded] = useState(false);
   const [llmText, setLlmText] = useState<string | null>(e.llm_impact ?? null);
   const [llmLoading, setLlmLoading] = useState(false);
-  const hasDetail = !!(e.rationale || llmText);
+  const hasDetail = !!(e.rationale || llmText || e.llm_pre_decision_json || e.original_action);
 
   const fetchLLM = async () => {
     setLlmLoading(true);
@@ -55,6 +55,30 @@ function AuditRow({ e }: { e: AuditEntryRow }) {
       {expanded && (
         <tr className="bg-indigo-50/40 border-b border-indigo-100">
           <td colSpan={6} className="px-5 py-4 space-y-3">
+            {e.original_action && (
+              <div className="flex items-center gap-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
+                <span className="text-amber-600 text-xs">⚠</span>
+                <p className="text-xs font-semibold text-amber-700">
+                  Action overridden by manager: <span className="line-through opacity-70">{e.original_action}</span> → <span className="font-bold">{e.action}</span>
+                </p>
+              </div>
+            )}
+            {e.llm_pre_decision_json && (() => {
+              try {
+                const pred = JSON.parse(e.llm_pre_decision_json) as { reasoning?: string; action?: string; risk_level?: string };
+                return (
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-violet-400 mb-1">AI Pre-Decision Opinion</p>
+                    {pred.action && (
+                      <p className="text-xs text-violet-600 font-semibold mb-1">
+                        AI recommended: {pred.action}{pred.risk_level ? ` · Risk: ${pred.risk_level}` : ''}
+                      </p>
+                    )}
+                    {pred.reasoning && <p className="text-sm text-gray-700 leading-relaxed">{pred.reasoning}</p>}
+                  </div>
+                );
+              } catch { return null; }
+            })()}
             {e.rationale && (
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">Human Rationale</p>

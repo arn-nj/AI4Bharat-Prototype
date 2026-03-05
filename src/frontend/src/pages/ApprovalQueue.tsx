@@ -26,6 +26,8 @@ export default function ApprovalQueue() {
   const [loadingOpinion, setLoadingOpinion] = useState(false);
   const [llmFailed, setLlmFailed] = useState(false);
   const [overrideAction, setOverrideAction] = useState<string>('');
+  // Cache opinions by recommendation_id so re-selecting doesn't re-fetch
+  const [opinionCache, setOpinionCache] = useState<Record<string, LLMPrediction>>({});
 
   const load = async () => {
     setLoading(true);
@@ -34,14 +36,23 @@ export default function ApprovalQueue() {
 
   useEffect(() => { load(); }, []);
 
-  // Auto-fetch AI opinion whenever a new item is selected
+  // Auto-fetch AI opinion whenever a new item is selected — use cache if available
   useEffect(() => {
     if (!selected) return;
+    const cached = opinionCache[selected.recommendation_id];
+    if (cached) {
+      setLlmOpinion(cached);
+      setLlmFailed(false);
+      return;
+    }
     setLlmOpinion(null);
     setLlmFailed(false);
     setLoadingOpinion(true);
     getLLMOpinion(selected.asset_id)
-      .then(pred => setLlmOpinion(pred))
+      .then(pred => {
+        setLlmOpinion(pred);
+        setOpinionCache(prev => ({ ...prev, [selected.recommendation_id]: pred }));
+      })
       .catch(() => setLlmFailed(true))
       .finally(() => setLoadingOpinion(false));
   }, [selected?.recommendation_id]);
@@ -215,7 +226,10 @@ export default function ApprovalQueue() {
                     setLlmFailed(false);
                     setLoadingOpinion(true);
                     getLLMOpinion(selected.asset_id)
-                      .then(pred => setLlmOpinion(pred))
+                      .then(pred => {
+                        setLlmOpinion(pred);
+                        setOpinionCache(prev => ({ ...prev, [selected.recommendation_id]: pred }));
+                      })
                       .catch(() => setLlmFailed(true))
                       .finally(() => setLoadingOpinion(false));
                   }}

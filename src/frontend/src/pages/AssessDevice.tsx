@@ -22,6 +22,79 @@ const DEVICES = [
 const OS_OPTIONS   = ['Windows 11', 'Windows 10', 'macOS 14', 'Ubuntu 22.04', 'ChromeOS', 'Android 14', 'iOS 17'];
 const USAGE_TYPES  = ['Standard', 'Development', 'Creative', 'Intensive', 'Light'];
 
+const BRANDS = ['HP', 'Dell', 'Apple', 'Lenovo', 'Asus', 'Acer', 'Microsoft', 'Toshiba', 'Samsung'];
+
+const BRAND_SERIALS: Record<string, () => string> = {
+  HP:        () => `5C${rnd(['G','D','U'])}${rr(10,25)}${rndStr('ABCDEFGHJKLMNPQRSTUVWXYZ0123456789', 6)}`,
+  Dell:      () => rndStr('BCDFGHJKLMNPQRSTVWXYZ0123456789', 7),
+  Apple:     () => `C02${rndStr('ABCDEFGHJKLMNPQRSTUVWXYZ0123456789', 8)}`,
+  Lenovo:    () => `PC${rr(10,99)}${rndStr('ABCDEFGHJKLMNPQRSTUVWXYZ', 2)}${rr(1000,9999)}`,
+  Samsung:   () => `${rnd(['R','S'])}${rr(10,25)}${rndStr('ABCDEFGHJKLMNPQRSTUVWXYZ0123456789', 8)}`,
+  Asus:      () => `G${rr(10,25)}N${rndStr('ABCDEFGHJKLMNPQRSTUVWXYZ0123456789', 6)}`,
+  Acer:      () => `NXH${rr(100,999)}${rr(10000,99999)}`,
+  Microsoft: () => `TQ${rndStr('ABCDEFGHJKLMNPQRSTUVWXYZ0123456789', 8)}`,
+  Toshiba:   () => `${rndStr('ABCDEFGHJKLM', 2)}${rr(10000000,99999999)}`,
+};
+
+const DEVICE_OS: Record<string, string[]> = {
+  Laptop:          ['Windows 11', 'Windows 10', 'macOS 14', 'Ubuntu 22.04'],
+  Desktop:         ['Windows 11', 'Windows 10', 'Ubuntu 22.04'],
+  Server:          ['Ubuntu 22.04', 'Windows 10'],
+  Tablet:          ['Android 14', 'iOS 17', 'Windows 11'],
+  Workstation:     ['Windows 11', 'Ubuntu 22.04'],
+  Printer:         [''],
+  'Network Device':[''],
+  'Mobile Phone':  ['Android 14', 'iOS 17'],
+  Monitor:         [''],
+  Projector:       [''],
+};
+
+function rr(min: number, max: number) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+function rnd<T>(arr: T[]): T { return arr[Math.floor(Math.random() * arr.length)]; }
+function rndStr(chars: string, len: number) {
+  return Array.from({ length: len }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+}
+
+function buildRandomForm(): AssetCreate {
+  const device   = rnd(DEVICES);
+  const brand    = rnd(BRANDS);
+  const year     = rr(2018, 2024);
+  const ageMonths = (2026 - year) * 12 + rr(0, 11);
+  const isBattery = ['Laptop', 'Tablet', 'Mobile Phone'].includes(device);
+  const serialFn  = BRAND_SERIALS[brand] ?? (() => `${brand.slice(0,2).toUpperCase()}${rndStr('ABCDEFGHJKLMNPQRSTUVWXYZ0123456789', 8)}`);
+  const totalInc  = rr(0, 15);
+  const critInc   = rr(0, Math.min(3, totalInc));
+  const highInc   = rr(0, Math.max(0, totalInc - critInc));
+  const medInc    = rr(0, Math.max(0, totalInc - critInc - highInc));
+  const lowInc    = Math.max(0, totalInc - critInc - highInc - medInc);
+  const thermal   = rr(0, 20);
+  const osOpts    = DEVICE_OS[device] ?? OS_OPTIONS;
+  return {
+    device_type:              device,
+    brand,
+    serial_number:            serialFn(),
+    model_name:               `${brand} ${device} ${year}`,
+    model_year:               year,
+    department:               rnd(DEPARTMENTS),
+    region:                   rnd(OFFICE_LOCATIONS),
+    os:                       rnd(osOpts) || undefined,
+    usage_type:               rnd(USAGE_TYPES),
+    daily_usage_hours:        parseFloat((rr(2, 14) + Math.random()).toFixed(1)),
+    performance_rating:       rr(1, 5),
+    battery_health_pct:       isBattery ? rr(30, 100) : undefined,
+    battery_cycles:           isBattery ? rr(0, 1200) : undefined,
+    overheating_issues:       thermal > 8,
+    thermal_events_count:     thermal,
+    smart_sectors_reallocated:rr(0, 80),
+    total_incidents:          totalInc,
+    critical_incidents:       critInc,
+    high_incidents:           highInc,
+    medium_incidents:         medInc,
+    low_incidents:            lowInc,
+    avg_resolution_time_hours:parseFloat((rr(1, 72) + Math.random()).toFixed(1)),
+  };
+}
+
 const DEFAULT_FORM: AssetCreate = {
   device_type: 'Laptop',
   department: 'IT',
@@ -72,7 +145,16 @@ export default function AssessDevice() {
         <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 space-y-4">
 
           {/* ── Identity & Usage ─────────────────────── */}
-          <h2 className="font-semibold text-gray-700 text-sm uppercase tracking-wide text-gray-400">Identity &amp; Usage</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="font-semibold text-sm uppercase tracking-wide text-gray-400">Identity &amp; Usage</h2>
+            <button
+              type="button"
+              onClick={() => { setForm(buildRandomForm()); setResult(null); setError(null); }}
+              className="text-xs px-3 py-1.5 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 font-medium transition-colors"
+            >
+              ⚄ Fill Random
+            </button>
+          </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>

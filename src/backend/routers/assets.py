@@ -35,7 +35,8 @@ def _data_completeness(payload: AssetCreate) -> float:
 @router.post("", response_model=AssetOut, status_code=201)
 def create_asset(payload: AssetCreate, db: Session = Depends(get_db)):
     now = datetime.now(timezone.utc).isoformat()
-    age = payload.model_year and (2024 - payload.model_year) * 12 or (
+    current_year = datetime.now(timezone.utc).year
+    age = payload.model_year and (current_year - payload.model_year) * 12 or (
         _age_from_purchase(payload.purchase_date) if payload.purchase_date else 0
     )
     completeness = _data_completeness(payload)

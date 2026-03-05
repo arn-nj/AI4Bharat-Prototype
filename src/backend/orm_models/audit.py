@@ -33,6 +33,8 @@ class AuditEntry(BaseModel):
     recommendation_snapshot: Dict[str, Any]
     timestamp: str
     llm_impact: Optional[str] = None
+    llm_pre_decision_json: Optional[str] = None
+    original_action: Optional[str] = None
 
 
 class KPIOut(BaseModel):

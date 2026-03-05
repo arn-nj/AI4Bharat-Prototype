@@ -32,6 +32,43 @@ REGIONS       = [
 OS_LIST       = ["Windows 11", "Windows 10", "macOS 14", "Ubuntu 22.04", "ChromeOS", "Android 14", "iOS 17"]
 USAGE_TYPES   = ["Standard", "Development", "Creative", "Intensive", "Light"]
 
+_SN_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ0123456789"
+
+
+def _brand_serial(brand: str, year: int) -> str:
+    """Return a brand-realistic corporate serial number."""
+    yy = year % 100
+    if brand == "HP":
+        # HP EliteBook/ProBook format: 5CG/5CD + YY + 6 alphanum
+        prefix = random.choice(["5CG", "5CD", "CNU"])
+        return f"{prefix}{yy:02d}{''.join(random.choices(_SN_CHARS, k=6))}"
+    if brand == "Dell":
+        # Dell service tag: 7 uppercase alphanum (no I/O to avoid confusion)
+        return ''.join(random.choices('BCDFGHJKLMNPQRSTVWXYZ0123456789', k=7))
+    if brand == "Apple":
+        # Apple MacBook serial: C02 + 8 alphanum
+        return f"C02{''.join(random.choices(_SN_CHARS, k=8))}"
+    if brand == "Lenovo":
+        # Lenovo ThinkPad: PC + 2digits + 2letters + 4digits
+        return (f"PC{random.randint(10, 99)}"
+                f"{''.join(random.choices('ABCDEFGHJKLMNPQRSTUVWXYZ', k=2))}"
+                f"{random.randint(1000, 9999)}")
+    if brand == "Samsung":
+        # Samsung: R/S + 2digits + 8 alphanum
+        return f"{random.choice(['R', 'S'])}{yy:02d}{''.join(random.choices(_SN_CHARS, k=8))}"
+    if brand == "Asus":
+        return f"G{yy:02d}N{''.join(random.choices(_SN_CHARS, k=6))}"
+    if brand == "Acer":
+        return f"NXH{random.randint(100, 999)}{random.randint(10000, 99999)}"
+    if brand == "Microsoft":
+        # Surface devices: TQ / 03 prefix + 8 alphanum
+        return f"TQ{''.join(random.choices(_SN_CHARS, k=8))}"
+    if brand == "Toshiba":
+        return f"{''.join(random.choices('ABCDEFGHJKLM', k=2))}{random.randint(10_000_000, 99_999_999)}"
+    if brand == "Canon":
+        return f"CN{random.randint(10_000_000, 99_999_999)}"
+    return f"{brand[:2].upper()}{yy:02d}{''.join(random.choices(_SN_CHARS, k=8))}"
+
 # ── Profile distributions ─────────────────────────────────────
 
 def _random_profile(device_type: str) -> dict:
@@ -164,8 +201,8 @@ def generate_fleet(
         brand = random.choice(BRANDS)
         os    = random.choice(OS_LIST)
         year  = 2024 - (profile["age_months"] // 12)
-        # Generate a realistic corporate serial number: <BRAND_PREFIX><YEAR><6_HEX>
-        serial = f"{brand[:2].upper()}{year}{uuid.uuid4().hex[:6].upper()}"
+        # Generate a brand-appropriate corporate serial number
+        serial = _brand_serial(brand, year)
 
         asset = AssetRow(
             asset_id=str(uuid.uuid4()),

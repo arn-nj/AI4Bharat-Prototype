@@ -43,10 +43,12 @@ def process_decision(
         raise ValueError(f"Asset {rec.asset_id} not found")
 
     previous_state = asset.current_state
+    original_action_value: Optional[str] = None
 
     if decision == ApprovalDecision.APPROVED:
         effective_action = override_action if override_action and override_action in ACTION_TO_STATE else rec.action
         if override_action and override_action in ACTION_TO_STATE:
+            original_action_value = rec.action   # record before mutating
             rec.action = effective_action
         new_state = ACTION_TO_STATE.get(effective_action, AssetState.EXCEPTION).value
         asset.current_state = AssetState.WORKFLOW_IN_PROGRESS.value
@@ -103,6 +105,8 @@ def process_decision(
         asset_snapshot_json=json.dumps(asset_snapshot),
         recommendation_snapshot_json=json.dumps(rec_snapshot),
         llm_impact=llm_impact,
+        llm_pre_decision_json=rec.llm_prediction_json,
+        original_action=original_action_value,
         timestamp=now,
     )
     db.add(audit)
