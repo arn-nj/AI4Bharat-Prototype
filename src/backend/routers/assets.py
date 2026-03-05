@@ -93,7 +93,7 @@ def list_assets(
         q = q.filter_by(region=region)
     if state:
         q = q.filter_by(current_state=state)
-    rows = q.offset((page - 1) * page_size).limit(page_size).all()
+    rows = q.order_by(AssetRow.updated_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
     return [AssetOut(**r.__dict__) for r in rows]
 
 

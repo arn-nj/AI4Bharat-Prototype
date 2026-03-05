@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { createAsset, assessAsset, type AssetCreate, type AssessmentResultOut } from '../services/api';
+import { createAsset, assessAsset, decideApproval, type AssetCreate, type AssessmentResultOut } from '../services/api';
 import ActionBadge from '../components/ActionBadge';
 import RiskBadge from '../components/RiskBadge';
 import ConfidenceBar from '../components/ConfidenceBar';
@@ -114,6 +114,13 @@ export default function AssessDevice() {
   const [result, setResult] = useState<AssessmentResultOut | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Approval state
+  const [approvalRationale, setApprovalRationale] = useState('');
+  const [approvalActor, setApprovalActor] = useState('demo-user');
+  const [overrideAction, setOverrideAction] = useState('');
+  const [approving, setApproving] = useState(false);
+  const [approvalDone, setApprovalDone] = useState<'approved' | 'rejected' | null>(null);
+
   const hasBattery = BATTERY_DEVICES.has(form.device_type);
   const filteredOS = NO_OS_DEVICES.has(form.device_type)
     ? []
@@ -144,6 +151,9 @@ export default function AssessDevice() {
     setLoading(true);
     setError(null);
     setResult(null);
+    setApprovalDone(null);
+    setApprovalRationale('');
+    setOverrideAction('');
     try {
       const asset = await createAsset(form);
       const assessment = await assessAsset(asset.asset_id);
@@ -397,6 +407,108 @@ export default function AssessDevice() {
                   </details>
                 )}
               </div>
+
+              {/* ── Inline Approval Panel ─────────────────────── */}
+              {approvalDone ? (
+                <div className={`rounded-xl border p-5 text-center space-y-1 ${
+                  approvalDone === 'approved'
+                    ? 'bg-green-50 border-green-200'
+                    : 'bg-red-50 border-red-200'
+                }`}>
+                  <p className="text-2xl">{approvalDone === 'approved' ? '✅' : '❌'}</p>
+                  <p className={`font-semibold capitalize ${
+                    approvalDone === 'approved' ? 'text-green-700' : 'text-red-700'
+                  }`}>
+                    Recommendation {approvalDone}
+                  </p>
+                  <p className="text-xs text-gray-500">Decision recorded in audit trail</p>
+                </div>
+              ) : (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 space-y-4">
+                  <h2 className="font-semibold text-gray-700">Decision</h2>
+
+                  <div>
+                    <label className={labelClass}>Override Action <span className="text-gray-400 font-normal">(optional — leave blank to accept recommendation)</span></label>
+                    <select
+                      className={inputClass}
+                      value={overrideAction}
+                      onChange={e => setOverrideAction(e.target.value)}
+                    >
+                      <option value="">Accept recommended: {result.recommendation.action}</option>
+                      {['recycle','repair','refurbish','redeploy','resale']
+                        .filter(a => a !== result.recommendation.action.toLowerCase())
+                        .map(a => <option key={a} value={a} className="capitalize">{a.charAt(0).toUpperCase() + a.slice(1)}</option>)
+                      }
+                    </select>
+                    {overrideAction && (
+                      <p className="text-xs text-amber-600 mt-1">⚠ Overriding AI recommendation — rationale required below</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className={labelClass}>Rationale *</label>
+                    <textarea
+                      className={`${inputClass} resize-none`}
+                      rows={2}
+                      placeholder="Reason for your decision…"
+                      value={approvalRationale}
+                      onChange={e => setApprovalRationale(e.target.value)}
+                    />
+                  </div>
+
+                  <div>
+                    <label className={labelClass}>Actor / Reviewer</label>
+                    <input
+                      className={inputClass}
+                      value={approvalActor}
+                      onChange={e => setApprovalActor(e.target.value)}
+                      placeholder="Your name or employee ID"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 pt-1">
+                    <button
+                      type="button"
+                      disabled={approving || !approvalRationale.trim()}
+                      onClick={async () => {
+                        setApproving(true);
+                        try {
+                          await decideApproval(result.recommendation.recommendation_id, {
+                            decision: 'approved',
+                            rationale: approvalRationale,
+                            actor: approvalActor || 'demo-user',
+                            override_action: overrideAction || undefined,
+                          });
+                          setApprovalDone('approved');
+                        } catch { /* ignore */ }
+                        finally { setApproving(false); }
+                      }}
+                      className="bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-semibold py-2.5 rounded-lg transition-colors"
+                    >
+                      {approving ? 'Processing…' : '✓ Approve'}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={approving || !approvalRationale.trim()}
+                      onClick={async () => {
+                        setApproving(true);
+                        try {
+                          await decideApproval(result.recommendation.recommendation_id, {
+                            decision: 'rejected',
+                            rationale: approvalRationale,
+                            actor: approvalActor || 'demo-user',
+                          });
+                          setApprovalDone('rejected');
+                        } catch { /* ignore */ }
+                        finally { setApproving(false); }
+                      }}
+                      className="bg-red-500 hover:bg-red-600 disabled:opacity-50 text-white font-semibold py-2.5 rounded-lg transition-colors"
+                    >
+                      {approving ? 'Processing…' : '✗ Reject'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </>
           ) : (
             <div className="bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 h-64 flex items-center justify-center text-gray-400 text-sm">
