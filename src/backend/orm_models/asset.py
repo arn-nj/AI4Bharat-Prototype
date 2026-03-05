@@ -61,6 +61,7 @@ class AssetOut(BaseModel):
     asset_id: str
     device_type: str
     brand: Optional[str] = None
+    serial_number: Optional[str] = None
     model_name: Optional[str] = None
     model_year: Optional[int] = None
     os: Optional[str] = None

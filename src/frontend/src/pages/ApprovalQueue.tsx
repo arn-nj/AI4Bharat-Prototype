@@ -3,12 +3,15 @@ import { getApprovalQueue, decideApproval, approveAll, getLLMOpinion, type Appro
 import ActionBadge from '../components/ActionBadge';
 import ConfidenceBar from '../components/ConfidenceBar';
 import RiskBadge from '../components/RiskBadge';
+import { assetTag } from '../utils/assetTag';
 
 const RISK_COLORS: Record<string, string> = {
-  high:   'text-red-700 bg-red-50',
-  medium: 'text-orange-700 bg-orange-50',
-  low:    'text-green-700 bg-green-50',
+  high:   'text-red-700 bg-red-50 border-red-200',
+  medium: 'text-orange-700 bg-orange-50 border-orange-200',
+  low:    'text-green-700 bg-green-50 border-green-200',
 };
+
+const ACTIONS = ['recycle', 'repair', 'refurbish', 'redeploy', 'resale'];
 
 export default function ApprovalQueue() {
   const [queue, setQueue] = useState<ApprovalQueueItem[]>([]);
@@ -21,6 +24,8 @@ export default function ApprovalQueue() {
   const [bulkApproving, setBulkApproving] = useState(false);
   const [llmOpinion, setLlmOpinion] = useState<LLMPrediction | null>(null);
   const [loadingOpinion, setLoadingOpinion] = useState(false);
+  const [llmFailed, setLlmFailed] = useState(false);
+  const [overrideAction, setOverrideAction] = useState<string>('');
 
   const load = async () => {
     setLoading(true);
@@ -29,21 +34,37 @@ export default function ApprovalQueue() {
 
   useEffect(() => { load(); }, []);
 
-  // Clear LLM opinion when selection changes
+  // Auto-fetch AI opinion whenever a new item is selected
+  useEffect(() => {
+    if (!selected) return;
+    setLlmOpinion(null);
+    setLlmFailed(false);
+    setLoadingOpinion(true);
+    getLLMOpinion(selected.asset_id)
+      .then(pred => setLlmOpinion(pred))
+      .catch(() => setLlmFailed(true))
+      .finally(() => setLoadingOpinion(false));
+  }, [selected?.recommendation_id]);
+
   const selectItem = (item: ApprovalQueueItem) => {
     setSelected(item);
-    setLlmOpinion(null);
+    setOverrideAction('');
   };
 
   const decide = async (decision: 'approved' | 'rejected') => {
     if (!selected || !rationale.trim()) return;
     setSubmitting(true);
     try {
-      const result = await decideApproval(selected.recommendation_id, { decision, rationale, actor });
+      const payload: Parameters<typeof decideApproval>[1] = { decision, rationale, actor };
+      if (decision === 'approved' && overrideAction && overrideAction !== selected.action) {
+        payload.override_action = overrideAction;
+      }
+      const result = await decideApproval(selected.recommendation_id, payload);
       setLastDecision(result);
       setSelected(null);
       setRationale('');
       setLlmOpinion(null);
+      setOverrideAction('');
       await load();
     } finally {
       setSubmitting(false);
@@ -57,20 +78,10 @@ export default function ApprovalQueue() {
       await approveAll({ rationale: 'Bulk approved by manager', actor });
       setSelected(null);
       setLlmOpinion(null);
+      setOverrideAction('');
       await load();
     } finally {
       setBulkApproving(false);
-    }
-  };
-
-  const fetchLLMOpinion = async () => {
-    if (!selected) return;
-    setLoadingOpinion(true);
-    try {
-      const pred = await getLLMOpinion(selected.asset_id);
-      setLlmOpinion(pred);
-    } finally {
-      setLoadingOpinion(false);
     }
   };
 
@@ -104,7 +115,7 @@ export default function ApprovalQueue() {
           </span>
           <div className="flex-1 min-w-0">
             <p className={`text-sm font-semibold ${lastDecision.decision === 'approved' ? 'text-green-800' : 'text-red-700'}`}>
-              {lastDecision.decision === 'approved' ? 'Approved' : 'Rejected'} · {lastDecision.asset_id} · {lastDecision.action}
+              {lastDecision.decision === 'approved' ? 'Approved' : 'Rejected'} · {lastDecision.action}
             </p>
             {lastDecision.rationale && (
               <p className="text-xs text-gray-600 mt-1 italic">“{lastDecision.rationale}”</p>
@@ -141,7 +152,7 @@ export default function ApprovalQueue() {
                 <div className="flex justify-between items-start mb-2">
                   <div>
                     <p className="font-medium text-sm">{item.device_type} · {item.department}</p>
-                    <p className="text-xs text-gray-400">{item.region} · {item.age_months}m old</p>
+                    <p className="text-xs text-gray-400">{assetTag(item)} · {item.region} · {item.age_months}m old</p>
                   </div>
                   <div className="flex flex-col items-end gap-1">
                     <ActionBadge action={item.action} size="sm" />
@@ -179,14 +190,18 @@ export default function ApprovalQueue() {
               )}
 
               <div className="bg-gray-50 rounded-lg p-3 text-sm space-y-1">
-                <p><span className="text-gray-500">Asset:</span> {selected.asset_id}</p>
-                <p><span className="text-gray-500">Action:</span> <span className="capitalize font-medium">{selected.action}</span></p>
-                <p><span className="text-gray-500">Policy:</span> {selected.policy_version}</p>
+                <p><span className="text-gray-500">Asset:</span> <span className="font-mono font-medium text-gray-800">{assetTag(selected)}</span></p>
+                <p><span className="text-gray-500">Current recommendation:</span> <span className="capitalize font-medium">{selected.action}</span></p>
               </div>
               <p className="text-sm text-gray-600">{selected.rationale}</p>
 
-              {/* AI Opinion */}
-              {llmOpinion ? (
+              {/* AI Opinion — auto-loads on selection */}
+              {loadingOpinion ? (
+                <div className="rounded-lg border border-indigo-100 bg-indigo-50/40 p-3 flex items-center gap-2 text-xs text-indigo-500">
+                  <span className="inline-block w-3.5 h-3.5 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+                  Fetching AI opinion…
+                </div>
+              ) : llmOpinion ? (
                 <div className={`rounded-lg border p-3 text-xs space-y-1 ${
                   RISK_COLORS[llmOpinion.risk_level] ?? 'bg-gray-50 border-gray-200 text-gray-700'
                 }`}>
@@ -194,17 +209,44 @@ export default function ApprovalQueue() {
                   <p>Risk: <span className="font-semibold capitalize">{llmOpinion.risk_level}</span> · Action: <span className="font-semibold capitalize">{llmOpinion.action}</span></p>
                   <p className="italic opacity-80 leading-relaxed">{llmOpinion.reasoning}</p>
                 </div>
-              ) : (
+              ) : llmFailed ? (
                 <button
-                  onClick={fetchLLMOpinion}
-                  disabled={loadingOpinion}
-                  className="w-full border border-indigo-200 text-indigo-600 hover:bg-indigo-50 text-sm font-medium py-2 rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                  onClick={() => {
+                    setLlmFailed(false);
+                    setLoadingOpinion(true);
+                    getLLMOpinion(selected.asset_id)
+                      .then(pred => setLlmOpinion(pred))
+                      .catch(() => setLlmFailed(true))
+                      .finally(() => setLoadingOpinion(false));
+                  }}
+                  className="w-full border border-indigo-200 text-indigo-600 hover:bg-indigo-50 text-sm font-medium py-2 rounded-lg transition-colors flex items-center justify-center gap-2"
                 >
-                  {loadingOpinion ? (
-                    <><span className="inline-block w-3.5 h-3.5 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" /> Getting AI opinion…</>
-                  ) : '✦ Get AI Opinion'}
+                  ✦ Retry AI Opinion
                 </button>
-              )}
+              ) : null}
+
+              {/* Action override */}
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Override action
+                  <span className="ml-1 font-normal text-gray-400">(optional — leave blank to keep recommendation)</span>
+                </label>
+                <select
+                  value={overrideAction}
+                  onChange={e => setOverrideAction(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
+                >
+                  <option value="">— Keep recommended: {selected.action} —</option>
+                  {ACTIONS.filter(a => a !== selected.action).map(a => (
+                    <option key={a} value={a} className="capitalize">{a.charAt(0).toUpperCase() + a.slice(1)}</option>
+                  ))}
+                </select>
+                {overrideAction && (
+                  <p className="text-[11px] text-amber-600 mt-1">
+                    ⚠ Will approve as <span className="font-semibold capitalize">{overrideAction}</span> instead of <span className="font-semibold capitalize">{selected.action}</span>
+                  </p>
+                )}
+              </div>
 
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Your Rationale *</label>

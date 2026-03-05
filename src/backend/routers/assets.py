@@ -43,6 +43,7 @@ def create_asset(payload: AssetCreate, db: Session = Depends(get_db)):
     asset = AssetRow(
         device_type=payload.device_type,
         brand=payload.brand,
+        serial_number=payload.serial_number,
         model_name=payload.model_name,
         model_year=payload.model_year,
         os=payload.os,

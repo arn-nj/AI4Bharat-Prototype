@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getAuditTrail, type AuditEntryRow } from '../services/api';
+import { getAuditTrail, getLLMOpinion, type AuditEntryRow } from '../services/api';
 import ActionBadge from '../components/ActionBadge';
 
 const DECISION_STYLE: Record<string, string> = {
@@ -9,7 +9,21 @@ const DECISION_STYLE: Record<string, string> = {
 
 function AuditRow({ e }: { e: AuditEntryRow }) {
   const [expanded, setExpanded] = useState(false);
-  const hasDetail = !!(e.rationale || e.llm_impact);
+  const [llmText, setLlmText] = useState<string | null>(e.llm_impact ?? null);
+  const [llmLoading, setLlmLoading] = useState(false);
+  const hasDetail = !!(e.rationale || llmText);
+
+  const fetchLLM = async () => {
+    setLlmLoading(true);
+    try {
+      const res = await getLLMOpinion(e.asset_id);
+      setLlmText(res.reasoning);
+    } catch {
+      setLlmText('Unable to fetch AI analysis at this time.');
+    } finally {
+      setLlmLoading(false);
+    }
+  };
 
   return (
     <>
@@ -47,11 +61,19 @@ function AuditRow({ e }: { e: AuditEntryRow }) {
                 <p className="text-sm text-gray-700 leading-relaxed">"{e.rationale}"</p>
               </div>
             )}
-            {e.llm_impact && (
+            {llmText ? (
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-400 mb-1">AI Impact Analysis</p>
-                <p className="text-sm text-gray-700 leading-relaxed">{e.llm_impact}</p>
+                <p className="text-sm text-gray-700 leading-relaxed">{llmText}</p>
               </div>
+            ) : (
+              <button
+                onClick={e => { e.stopPropagation(); fetchLLM(); }}
+                disabled={llmLoading}
+                className="text-xs text-indigo-500 underline hover:text-indigo-700 disabled:opacity-50"
+              >
+                {llmLoading ? 'Fetching AI analysis…' : '✦ Get AI analysis'}
+              </button>
             )}
           </td>
         </tr>

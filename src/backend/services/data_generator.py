@@ -164,11 +164,14 @@ def generate_fleet(
         brand = random.choice(BRANDS)
         os    = random.choice(OS_LIST)
         year  = 2024 - (profile["age_months"] // 12)
+        # Generate a realistic corporate serial number: <BRAND_PREFIX><YEAR><6_HEX>
+        serial = f"{brand[:2].upper()}{year}{uuid.uuid4().hex[:6].upper()}"
 
         asset = AssetRow(
             asset_id=str(uuid.uuid4()),
             device_type=dtype,
             brand=brand,
+            serial_number=serial,
             model_name=f"{brand} {dtype} {year}",
             model_year=year,
             department=dept,
