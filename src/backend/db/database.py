@@ -129,12 +129,15 @@ if _IS_SQLITE:
         cursor.close()
 else:
     # RDS PostgreSQL — pool_pre_ping keeps connections alive across Lambda invocations
+    # connect_timeout=10 ensures fast failure instead of hanging on cold start
     engine = create_engine(
         DATABASE_URL,
         pool_pre_ping=True,
-        pool_size=5,
-        max_overflow=10,
-        pool_recycle=300,  # recycle connections every 5 min (RDS idle timeout)
+        pool_size=2,        # Lambda concurrency: keep pool small
+        max_overflow=5,
+        pool_recycle=300,   # recycle connections every 5 min (RDS idle timeout)
+        pool_timeout=15,    # give up waiting for a pool slot after 15s
+        connect_args={"connect_timeout": 10},  # TCP connect timeout in seconds
     )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

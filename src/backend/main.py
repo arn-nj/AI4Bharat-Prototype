@@ -30,7 +30,7 @@ import logging
 import os
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from mangum import Mangum
 
@@ -60,6 +60,22 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── Strip API Gateway stage prefix ───────────────────────────────────────────
+# HTTP API v2 passes rawPath including the stage (e.g. /dev/api/health).
+# This middleware strips it so FastAPI routes correctly.
+@app.middleware("http")
+async def strip_stage_prefix(request: Request, call_next):
+    stage = os.getenv("STAGE", "")
+    if stage and stage != "$default":
+        path = request.scope.get("path", "")
+        prefix = f"/{stage}"
+        if path.startswith(prefix + "/"):
+            request.scope["path"] = path[len(prefix):]
+        elif path == prefix:
+            request.scope["path"] = "/"
+    return await call_next(request)
+
 
 # ── DB init on startup ────────────────────────────────────────────────────────
 
