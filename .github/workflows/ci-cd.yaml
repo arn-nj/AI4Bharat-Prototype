@@ -52,8 +52,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install flake8 pytest pytest-cov httpx
+          pip install -r requirements-dev.txt
 
       - name: Lint with flake8
         run: |
@@ -66,7 +65,7 @@ jobs:
         run: |
           pytest tests/ -v --tb=short --cov=src --cov-report=xml --cov-report=term-missing || true
         env:
-          PYTHONPATH: src/backend:src/llm_engine:src/storage
+          PYTHONPATH: ${{ github.workspace }}
 
       - name: Upload coverage report
         if: always()
@@ -131,7 +130,10 @@ jobs:
             --parameter-overrides \
               StageName=dev \
               BedrockModelId=${{ vars.BEDROCK_MODEL_ID || 'qwen.qwen3-30b-a3b' }} \
-              BedrockRegion=${{ env.AWS_REGION }}
+              BedrockRegion=${{ env.AWS_REGION }} \
+              VpcId=${{ secrets.VPC_ID }} \
+              DBUsername=${{ vars.DB_USERNAME || 'ewasteadmin' }} \
+              DBPassword=${{ secrets.DB_PASSWORD_DEV }}
 
           API_URL=$(aws cloudformation describe-stacks \
             --stack-name ewaste-optimizer-dev \
@@ -186,9 +188,9 @@ jobs:
       - name: Smoke test
         run: |
           API_URL="${{ steps.deploy.outputs.api_url }}"
-          echo "Testing health endpoint: ${API_URL}/health"
+          echo "Testing health endpoint: ${API_URL}/api/health"
           
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${API_URL}/health" --max-time 30)
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${API_URL}/api/health" --max-time 30)
           
           if [ "$HTTP_CODE" -eq 200 ]; then
             echo "✅ Health check passed (HTTP $HTTP_CODE)"
@@ -266,7 +268,10 @@ jobs:
             --parameter-overrides \
               StageName=prod \
               BedrockModelId=${{ vars.BEDROCK_MODEL_ID || 'qwen.qwen3-30b-a3b' }} \
-              BedrockRegion=${{ env.AWS_REGION }}
+              BedrockRegion=${{ env.AWS_REGION }} \
+              VpcId=${{ secrets.VPC_ID }} \
+              DBUsername=${{ vars.DB_USERNAME || 'ewasteadmin' }} \
+              DBPassword=${{ secrets.DB_PASSWORD_PROD }}
 
           API_URL=$(aws cloudformation describe-stacks \
             --stack-name ewaste-optimizer-prod \
@@ -321,9 +326,9 @@ jobs:
       - name: Smoke test
         run: |
           API_URL="${{ steps.deploy.outputs.api_url }}"
-          echo "Testing health endpoint: ${API_URL}/health"
+          echo "Testing health endpoint: ${API_URL}/api/health"
           
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${API_URL}/health" --max-time 30)
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${API_URL}/api/health" --max-time 30)
           
           if [ "$HTTP_CODE" -eq 200 ]; then
             echo "✅ Health check passed (HTTP $HTTP_CODE)"

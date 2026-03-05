@@ -3,8 +3,8 @@ Transform: AWS::Serverless-2016-10-31
 
 Description: >
   E-Waste Asset Lifecycle Optimizer — AWS SAM template
-  Deploys FastAPI on Lambda behind API Gateway, with S3 for storage
-  and IAM permissions for Bedrock (Qwen3 model).
+  Deploys FastAPI on Lambda behind API Gateway, RDS PostgreSQL,
+  S3 for storage, and IAM permissions for Bedrock (Qwen3 model).
 
 # ---------------------------------------------------------------------------
 # Parameters
@@ -30,6 +30,32 @@ Parameters:
     Type: String
     Default: us-east-1
     Description: AWS region for Bedrock API calls
+
+  # ── RDS Parameters ──────────────────────────────────────────────────────
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: >
+      VPC where the RDS instance will be created.
+      Use your default VPC: aws ec2 describe-vpcs --filters Name=isDefault,Values=true --query 'Vpcs[0].VpcId' --output text
+
+  DBUsername:
+    Type: String
+    Default: ewasteadmin
+    Description: Master username for the RDS PostgreSQL instance
+
+  DBPassword:
+    Type: String
+    NoEcho: true
+    MinLength: 8
+    Description: >-
+      Master password for the RDS PostgreSQL instance.
+      Store in GitHub secret: DB_PASSWORD_DEV (for develop branch) or DB_PASSWORD_PROD (for main branch).
+
+# ---------------------------------------------------------------------------
+# Conditions
+# ---------------------------------------------------------------------------
+Conditions:
+  IsProd: !Equals [!Ref StageName, prod]
 
 # ---------------------------------------------------------------------------
 # Globals — shared settings applied to all Lambda functions
@@ -84,6 +110,50 @@ Resources:
         - Key: Stage
           Value: !Ref StageName
 
+  # ── RDS Security Group — allows inbound PostgreSQL from anywhere ────────
+  # (Hackathon setup: Lambda is outside the VPC, RDS is publicly accessible)
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "ewaste-rds-sg-${StageName} — allow PostgreSQL inbound"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: 0.0.0.0/0   # Lambda public IP; tighten to VPC CIDR for production
+      Tags:
+        - Key: Project
+          Value: EWasteAssetOptimizer
+        - Key: Stage
+          Value: !Ref StageName
+
+  # ── RDS PostgreSQL Instance ────────────────────────────────────────────
+  Database:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot   # keep data on stack delete
+    Properties:
+      DBInstanceIdentifier: !Sub "ewaste-db-${StageName}"
+      DBInstanceClass: !If [IsProd, db.t3.small, db.t3.micro]
+      DBName: ewaste
+      Engine: postgres
+      EngineVersion: "15.7"
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      AllocatedStorage: !If [IsProd, "20", "10"]
+      StorageType: gp2
+      StorageEncrypted: true
+      PubliclyAccessible: true   # Lambda accesses over public endpoint
+      VPCSecurityGroups:
+        - !GetAtt RDSSecurityGroup.GroupId
+      BackupRetentionPeriod: !If [IsProd, 7, 1]
+      DeletionProtection: !If [IsProd, true, false]
+      Tags:
+        - Key: Project
+          Value: EWasteAssetOptimizer
+        - Key: Stage
+          Value: !Ref StageName
+
   # ── API Gateway (HTTP API) ─────────────────────────────────────────────
   ApiGateway:
     Type: AWS::Serverless::HttpApi
@@ -127,6 +197,7 @@ Resources:
           S3_BUCKET_NAME: !Ref StorageBucket
           BEDROCK_REGION: !Ref BedrockRegion
           BEDROCK_MODEL_ID: !Ref BedrockModelId
+          DATABASE_URL: !Sub "postgresql+psycopg2://${DBUsername}:${DBPassword}@${Database.Endpoint.Address}:${Database.Endpoint.Port}/ewaste"
           S3_MODEL_PREFIX: "models/"
           S3_RESULTS_PREFIX: "results/"
           S3_DOCUMENTS_PREFIX: "documents/"
@@ -292,3 +363,15 @@ Outputs:
   FrontendUrl:
     Description: React frontend URL (CloudFront HTTPS)
     Value: !Sub "https://${FrontendDistribution.DomainName}"
+
+  DBEndpoint:
+    Description: RDS PostgreSQL endpoint hostname
+    Value: !GetAtt Database.Endpoint.Address
+
+  DBPort:
+    Description: RDS PostgreSQL port
+    Value: !GetAtt Database.Endpoint.Port
+
+  DBName:
+    Description: PostgreSQL database name
+    Value: ewaste

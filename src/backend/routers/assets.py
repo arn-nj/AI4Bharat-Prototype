@@ -1,0 +1,106 @@
+"""Assets router — CRUD for device inventory."""
+
+from __future__ import annotations
+
+import math
+from datetime import datetime, timezone
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+
+from ..db.database import AssetRow, get_db
+from ..orm_models.asset import AssetCreate, AssetOut
+
+router = APIRouter(prefix="/api/assets", tags=["assets"])
+
+
+def _age_from_purchase(purchase_date: str) -> int:
+    try:
+        pd_dt = datetime.fromisoformat(purchase_date.replace("Z", "+00:00"))
+        now   = datetime.now(timezone.utc)
+        return max(0, int((now - pd_dt).days / 30))
+    except Exception:
+        return 0
+
+
+def _data_completeness(payload: AssetCreate) -> float:
+    telemetry_fields = [payload.battery_cycles, payload.smart_sectors_reallocated, payload.thermal_events_count]
+    ticket_fields    = [payload.total_incidents, payload.critical_incidents, payload.avg_resolution_time_hours]
+    filled = sum(1 for f in telemetry_fields + ticket_fields if f is not None)
+    return round(filled / 6, 2)
+
+
+@router.post("", response_model=AssetOut, status_code=201)
+def create_asset(payload: AssetCreate, db: Session = Depends(get_db)):
+    now = datetime.now(timezone.utc).isoformat()
+    age = payload.model_year and (2024 - payload.model_year) * 12 or (
+        _age_from_purchase(payload.purchase_date) if payload.purchase_date else 0
+    )
+    completeness = _data_completeness(payload)
+
+    asset = AssetRow(
+        device_type=payload.device_type,
+        brand=payload.brand,
+        model_name=payload.model_name,
+        model_year=payload.model_year,
+        os=payload.os,
+        purchase_date=payload.purchase_date or now,
+        department=payload.department,
+        region=payload.region,
+        age_months=age,
+        data_completeness=completeness,
+        battery_cycles=payload.battery_cycles,
+        smart_sectors_reallocated=payload.smart_sectors_reallocated,
+        thermal_events_count=payload.thermal_events_count,
+        total_incidents=payload.total_incidents,
+        critical_incidents=payload.critical_incidents,
+        high_incidents=payload.high_incidents,
+        medium_incidents=payload.medium_incidents,
+        low_incidents=payload.low_incidents,
+        avg_resolution_time_hours=payload.avg_resolution_time_hours,
+        current_state="active",
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(asset)
+    db.commit()
+    db.refresh(asset)
+    return AssetOut(**asset.__dict__)
+
+
+@router.get("", response_model=List[AssetOut])
+def list_assets(
+    department: Optional[str] = Query(None),
+    region: Optional[str] = Query(None),
+    state: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    q = db.query(AssetRow)
+    if department:
+        q = q.filter_by(department=department)
+    if region:
+        q = q.filter_by(region=region)
+    if state:
+        q = q.filter_by(current_state=state)
+    rows = q.offset((page - 1) * page_size).limit(page_size).all()
+    return [AssetOut(**r.__dict__) for r in rows]
+
+
+@router.get("/{asset_id}", response_model=AssetOut)
+def get_asset(asset_id: str, db: Session = Depends(get_db)):
+    row = db.query(AssetRow).filter_by(asset_id=asset_id).first()
+    if not row:
+        raise HTTPException(404, f"Asset {asset_id} not found")
+    return AssetOut(**row.__dict__)
+
+
+@router.delete("/{asset_id}", status_code=204)
+def delete_asset(asset_id: str, db: Session = Depends(get_db)):
+    row = db.query(AssetRow).filter_by(asset_id=asset_id).first()
+    if not row:
+        raise HTTPException(404, f"Asset {asset_id} not found")
+    db.delete(row)
+    db.commit()
