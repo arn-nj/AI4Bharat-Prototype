@@ -18,7 +18,7 @@ src/
 │   ├── orm_models/         Pydantic schemas — asset, risk, recommendation, audit
 │   ├── services/           Business logic — risk_engine, recommendation, approval, kpi, llm, data_generator
 │   ├── routers/            FastAPI routers — assets, assess, approvals, kpis, ai, demo, audit_trail
-│   └── main.py             App entry-point + Mangum Lambda handler (19 routes)
+│   └── main.py             App entry-point + Mangum Lambda handler (17 routes)
 ├── frontend/               React 18 + Vite 5 + Tailwind + recharts — 7-page SPA
 │   └── src/pages/          Dashboard, AssessDevice, AssetInventory, ApprovalQueue,
 │                           AuditTrail, AIAssistant, Settings
@@ -76,9 +76,10 @@ Browser → API Gateway → Lambda (FastAPI/Mangum) → Amazon Bedrock (Qwen3-30
 ├── src/
 │   ├── backend/
 │   │   ├── main.py               FastAPI app, routes, CORS, Mangum handler
-│   │   ├── models.py             Pydantic request/response schemas
-│   │   ├── device_analyser.py    Pipeline orchestrator: ML → Policy → LLM
-│   │   └── test_analyse_device.py  10-scenario integration test script
+│   │   ├── db/                   SQLAlchemy engine + ORM models (Asset, Risk, Recommendation, Audit)
+│   │   ├── orm_models/           Pydantic schemas — asset, risk, recommendation, audit
+│   │   ├── services/             risk_engine, recommendation, approval, kpi, llm, data_generator
+│   │   └── routers/              assets, assess, approvals, kpis, ai, demo, audit_trail
 │   ├── frontend/
 │   │   ├── src/                  React components + API client
 │   │   ├── vite.config.ts
@@ -208,10 +209,12 @@ All endpoints are prefixed with `/api`. Swagger UI: `http://localhost:8000/docs`
 | `POST` | `/api/assess/{asset_id}` | Run full risk + recommendation pipeline |
 | `GET` | `/api/approvals/queue` | List assets pending approval (`review_pending`) |
 | `POST` | `/api/approvals/{id}/decide` | Approve or reject a recommendation |
+| `POST` | `/api/approvals/approve-all` | Bulk approve all pending recommendations |
 | `GET` | `/api/kpis` | Fleet KPIs + environmental impact metrics |
 | `GET` | `/api/audit` | Audit trail (filters: asset_id, actor) |
 | `POST` | `/api/ai/chat` | LLM conversational assistant |
 | `POST` | `/api/ai/suggest-policy` | AI-generated policy threshold suggestions |
+| `GET` | `/api/ai/predict/{asset_id}` | On-demand LLM opinion for a specific asset |
 | `POST` | `/api/demo/generate` | Generate synthetic fleet data (`count`, `auto_assess`) |
 | `DELETE` | `/api/demo/reset` | Wipe all data (dev/demo use) |
 
@@ -222,7 +225,7 @@ All endpoints are prefixed with `/api`. Swagger UI: `http://localhost:8000/docs`
 | 1 | Policy engine | Deterministic threshold rules (age ≥ 42 months, tickets ≥ 5, thermal ≥ 10, SMART ≥ 50) |
 | 2 | ML inference | sklearn Pipeline (Gradient Boosting) — high/medium/low + class probabilities |
 | 3 | Score blend | Policy (60%) + ML (40%) when ML confidence ≥ 0.80 |
-| 4 | Action mapping | risk score → Redeploy / Resale / Refurbish / Recycle |
+| 4 | Action mapping | risk score → Redeploy / Resale / Refurbish / Repair / Recycle |
 | 5 | LLM rationale | Bedrock Qwen3-30B generates explanation + ITSM task JSON |
 
 ### KPI response includes environmental impact
@@ -242,13 +245,13 @@ The React 18 + Vite 5 + Tailwind SPA provides 7 pages:
 
 | Page | Path | Description |
 |---|---|---|
-| Dashboard | `/` | KPI strip, action distribution donut, risk bars, environmental impact |
-| Assess Device | `/assess` | Asset form → full pipeline result with ML probabilities + ITSM task |
+| Dashboard | `/` | KPI strip, action distribution donut, risk bars, environmental impact; AI Fleet Summary narrative refreshes on fleet change only |
+| Assess Device | `/assess` | Asset form (10 device types, 10 Indian city locations, usage/health fields) → full pipeline result with ML probabilities + ITSM task |
 | Asset Inventory | `/assets` | Paginated table with department/state filters |
-| Approval Queue | `/approvals` | Split-view: pending queue cards + approve/reject decision panel |
-| Audit Trail | `/audit` | Full immutable audit log |
-| AI Assistant | `/ai` | Conversational LLM chat with policy Q&A |
-| Settings | `/settings` | Demo generator + policy threshold editor + AI policy suggestions |
+| Approval Queue | `/approvals` | Pending queue with ML + LLM risk scores; per-item approve/reject; bulk approve-all; on-demand AI opinion |
+| Audit Trail | `/audit` | Immutable audit log with expandable rows showing human rationale + AI impact analysis |
+| AI Assistant | `/ai` | Conversational LLM chat with policy Q&A and follow-up suggestion chips |
+| Settings | `/settings` | Demo generator (10 device types, Indian cities, realistic risk profiles) + policy threshold editor + AI policy suggestions |
 
 
 ---
@@ -302,17 +305,55 @@ sam deploy \
 
 ---
 
-## The 10 preset scenarios
+## Device types & locations
 
-| # | Name | Expected action | Notable characteristic |
-|---|---|---|---|
-| 1 | Brand-new healthy laptop | REDEPLOY | All signals minimal, score ≈ 0.027 |
-| 2 | Young asset, minor wear | RESALE | Low wear, score ≈ 0.152 |
-| 3 | Mid-life, average wear | REFURBISH | Moderate signals, score ≈ 0.505 |
-| 4 | Overheating server, aging | REPAIR | Thermal + SMART breach, score ≈ 0.764 |
-| 5 | End-of-life, all signals maxed | RECYCLE | All signals at maximum, score ≈ 0.960 |
-| 6 | Borderline medium/high (~0.54) | REFURBISH | Right at 0.54 threshold |
-| 7 | Borderline low/medium (~0.35) | RESALE | Right at 0.35 threshold |
-| 8 | Old but well-maintained | RESALE | Age 60m but healthy hardware |
-| 9 | Partial telemetry (completeness=0.45) | policy-only | ML skipped, policy engine only |
-| 10 | High incidents, young device | REPAIR | Young but SMART + thermal breach |
+### Supported device categories (10)
+
+| Device type |
+|---|
+| Laptop |
+| Desktop |
+| Server |
+| Tablet |
+| Workstation |
+| Printer |
+| Network Device |
+| Mobile Phone |
+| Monitor |
+| Projector |
+
+### Office locations (10 Indian cities)
+
+Mumbai · Bengaluru · Chennai · Hyderabad · Delhi NCR · Pune · Kolkata · Ahmedabad · Kochi · Noida
+
+---
+
+## Asset fields
+
+| Field | Description |
+|---|---|
+| `device_type` | One of the 10 device categories above |
+| `office_location` | Indian city office |
+| `usage_type` | Standard / Development / Creative / Intensive / Light |
+| `daily_usage_hours` | Average hours per day the device is in use |
+| `performance_rating` | User-reported performance score (1–10) |
+| `battery_health_pct` | Battery health percentage (laptops / mobiles) |
+| `overheating_issues` | Boolean — persistent thermal problems reported |
+| `age_months` | Device age in months |
+| `incident_last_90d` | High/medium/low severity ticket counts (90-day window) |
+| `thermal_events_last_90d` | Thermal event count |
+| `smart_failure_risk_pct` | SMART predictive failure score |
+
+---
+
+## Demo data risk profiles
+
+The synthetic fleet generator (`POST /api/demo/generate`) produces realistic distributions:
+
+| Profile | Share | Typical outcome |
+|---|---|---|
+| Old device + high incident rate | 30 % | RECYCLE |
+| Young device + hardware fault (thermal ≥ 10 or SMART ≥ 50) | 15 % | REPAIR |
+| Mid-life, mixed signals | 25 % | REFURBISH |
+| Low-wear, young | 20 % | REDEPLOY |
+| Aging but healthy | 10 % | RESALE |
