@@ -16,6 +16,7 @@ class ApprovalRequest(BaseModel):
     decision: ApprovalDecision
     rationale: str
     actor: str = "demo-user"
+    override_action: Optional[str] = None
 
 
 class AuditEntry(BaseModel):

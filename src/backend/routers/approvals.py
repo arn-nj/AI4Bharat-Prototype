@@ -66,6 +66,7 @@ def decide(
             rationale=payload.rationale,
             actor=payload.actor,
             db=db,
+            override_action=payload.override_action,
         )
     except ValueError as exc:
         raise HTTPException(404, str(exc))

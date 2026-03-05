@@ -31,6 +31,7 @@ def process_decision(
     db: Session,
     *,
     generate_llm_impact: bool = True,
+    override_action: Optional[str] = None,
 ) -> AuditEntry:
     """Process an approval/rejection and write an immutable audit record."""
     rec = db.query(RecommendationRow).filter_by(recommendation_id=recommendation_id).first()
@@ -44,7 +45,10 @@ def process_decision(
     previous_state = asset.current_state
 
     if decision == ApprovalDecision.APPROVED:
-        new_state = ACTION_TO_STATE.get(rec.action, AssetState.EXCEPTION).value
+        effective_action = override_action if override_action and override_action in ACTION_TO_STATE else rec.action
+        if override_action and override_action in ACTION_TO_STATE:
+            rec.action = effective_action
+        new_state = ACTION_TO_STATE.get(effective_action, AssetState.EXCEPTION).value
         asset.current_state = AssetState.WORKFLOW_IN_PROGRESS.value
     else:
         new_state = AssetState.ACTIVE.value

@@ -133,6 +133,7 @@ export const getModelInfo = () => apiFetch<ModelInfo>('/model_info');
 export interface AssetCreate {
   device_type: string;
   brand?: string;
+  serial_number?: string;
   model_name?: string;
   model_year?: number;
   os?: string;
@@ -157,6 +158,7 @@ export interface AssetCreate {
 
 export interface AssetOut extends AssetCreate {
   asset_id: string;
+  serial_number?: string;
   age_months: number;
   data_completeness: number;
   current_state: string;
@@ -240,6 +242,7 @@ export interface ApprovalRequest {
   decision: 'approved' | 'rejected';
   rationale: string;
   actor: string;
+  override_action?: string;
 }
 
 export interface AuditEntry {

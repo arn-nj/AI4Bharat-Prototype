@@ -89,6 +89,17 @@ export default function AssessDevice() {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
+              <label className={labelClass}>Serial Number</label>
+              <input className={inputClass} value={form.serial_number ?? ''} onChange={e => set('serial_number', e.target.value)} placeholder="e.g. HP20245B3A2F" />
+            </div>
+            <div>
+              <label className={labelClass}>Model Name</label>
+              <input className={inputClass} value={form.model_name ?? ''} onChange={e => set('model_name', e.target.value)} placeholder="e.g. EliteBook 840 G9" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
               <label className={labelClass}>Department *</label>
               <select className={inputClass} value={form.department} onChange={e => set('department', e.target.value)}>
                 {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}

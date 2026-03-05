@@ -23,6 +23,7 @@ class AssetRow(Base):
     asset_id = Column(String, primary_key=True, default=lambda: f"ASSET-{uuid.uuid4().hex[:8]}")
     device_type = Column(String, nullable=False)
     brand = Column(String, nullable=True)
+    serial_number = Column(String, nullable=True)
     model_name = Column(String, nullable=True)
     model_year = Column(Integer, nullable=True)
     os = Column(String, nullable=True)
@@ -169,6 +170,7 @@ def _migrate_add_columns():
         ("assets", "performance_rating",  "INTEGER"),
         ("assets", "battery_health_pct",  "FLOAT"),
         ("assets", "overheating_issues",  "VARCHAR"),
+        ("assets", "serial_number",       "VARCHAR"),
     ]
     with engine.connect() as conn:
         for table, col, col_type in new_cols:
