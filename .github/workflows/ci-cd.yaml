@@ -119,16 +119,13 @@ jobs:
       - name: Deploy backend to dev
         id: deploy
         run: |
-          # Resolve VPC: prefer the secret if set, otherwise fall back to the default VPC
-          VPC_ID="${{ secrets.VPC_ID }}"
-          if [ -z "$VPC_ID" ]; then
-            VPC_ID=$(aws ec2 describe-vpcs \
-              --filters Name=isDefault,Values=true \
-              --query 'Vpcs[0].VpcId' \
-              --output text \
-              --region ${{ env.AWS_REGION }})
-            echo "VPC_ID secret not set — using default VPC: ${VPC_ID}"
-          fi
+          # Always resolve the default VPC at runtime to avoid stale secret values
+          VPC_ID=$(aws ec2 describe-vpcs \
+            --filters Name=isDefault,Values=true \
+            --query 'Vpcs[0].VpcId' \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          echo "Using default VPC: ${VPC_ID}"
 
           sam deploy \
             --stack-name ewaste-optimizer-dev \
@@ -268,15 +265,13 @@ jobs:
       - name: Deploy backend to production
         id: deploy
         run: |
-          VPC_ID="${{ secrets.VPC_ID }}"
-          if [ -z "$VPC_ID" ]; then
-            VPC_ID=$(aws ec2 describe-vpcs \
-              --filters Name=isDefault,Values=true \
-              --query 'Vpcs[0].VpcId' \
-              --output text \
-              --region ${{ env.AWS_REGION }})
-            echo "VPC_ID secret not set — using default VPC: ${VPC_ID}"
-          fi
+          # Always resolve the default VPC at runtime to avoid stale secret values
+          VPC_ID=$(aws ec2 describe-vpcs \
+            --filters Name=isDefault,Values=true \
+            --query 'Vpcs[0].VpcId' \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          echo "Using default VPC: ${VPC_ID}"
 
           sam deploy \
             --stack-name ewaste-optimizer-prod \
