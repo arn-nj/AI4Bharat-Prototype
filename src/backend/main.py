@@ -2,19 +2,25 @@
 main.py — FastAPI application for the E-Waste Asset Lifecycle Optimizer
 ========================================================================
 
-Endpoints
----------
-  POST /analyse_device   — Submit device data; receive ML + policy + LLM result
-  GET  /health           — Liveness check
-  GET  /model_info       — Returns model metadata (version, metrics, features)
+Features:
+  - Full multi-page workflow (assets, assess, approvals, KPIs, AI, audit)
+  - Trained Gradient Boosting ML model (AUC-ROC 0.9962)
+  - Rich LLM prompt engineering via Amazon Bedrock (Qwen3 30B)
+  - AWS Lambda-compatible via Mangum handler
+
+Routes:
+  Assets:    POST/GET /api/assets   GET/DELETE /api/assets/{id}
+  Assess:    POST /api/assess/{asset_id}
+  Approvals: GET /api/approvals/queue   POST /api/approvals/{id}/decide
+  KPIs:      GET /api/kpis
+  AI:        POST /api/ai/chat   POST /api/ai/suggest-policy
+  Demo:      POST /api/demo/generate   DELETE /api/demo/reset
+  Audit:     GET /api/audit
+  Health:    GET /api/health   GET /api/model_info
 
 Run locally:
     cd src/backend
     uvicorn main:app --reload --port 8000
-
-Then open:
-    http://localhost:8000/docs       (Swagger UI)
-    http://localhost:8000/redoc      (ReDoc)
 """
 
 from __future__ import annotations
@@ -22,178 +28,118 @@ from __future__ import annotations
 import json
 import logging
 import os
-import sys
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from mangum import Mangum
 
-# ---------------------------------------------------------------------------
-# Logging — configure once so all backend modules share the same format.
-# uvicorn also emits to this handler, giving a unified stream in the terminal.
-# ---------------------------------------------------------------------------
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
     datefmt="%H:%M:%S",
 )
 log = logging.getLogger("backend")
 
-# ── Resolve sibling package paths ────────────────────────────────────────────
-_BACKEND_DIR = Path(__file__).parent
-_SRC_DIR     = _BACKEND_DIR.parent          # src/
-_META_PATH   = _SRC_DIR / "model_training" / "models" / "model_metadata.json"
-
-if str(_BACKEND_DIR) not in sys.path:
-    sys.path.insert(0, str(_BACKEND_DIR))
-
-_STORAGE_DIR = _SRC_DIR / "storage"
-if str(_STORAGE_DIR) not in sys.path:
-    sys.path.insert(0, str(_STORAGE_DIR))
-
-from device_analyser import DeviceAnalyser  # noqa: E402
-from models import AnalysisResult, DeviceInput  # noqa: E402
-
-# S3 storage — optional, enabled when S3_BUCKET_NAME is set
-_s3_storage = None
-try:
-    from s3_storage import S3Storage
-    if os.getenv("S3_BUCKET_NAME"):
-        _s3_storage = S3Storage()
-        log.info("S3 storage enabled — bucket=%s", os.getenv("S3_BUCKET_NAME"))
-    else:
-        log.info("S3 storage disabled — S3_BUCKET_NAME not set")
-except Exception as exc:
-    log.warning("S3 storage unavailable: %s", exc)
-
-# ---------------------------------------------------------------------------
-# App setup
-# ---------------------------------------------------------------------------
+# ── Application ───────────────────────────────────────────────────────────────
 
 app = FastAPI(
-    title="E-Waste Asset Lifecycle Optimizer API",
+    title="E-Waste Asset Lifecycle Optimizer",
+    version="2.0.0",
     description=(
-        "Analyses IT assets using a trained ML risk classifier, a deterministic "
-        "policy engine, and an LLM to generate explanations and ITSM tasks."
+        "AI-powered platform for sustainable IT asset lifecycle management. "
+        "Combines a trained ML risk model (AUC-ROC 0.9962) with rich LLM prompt "
+        "engineering to recommend Recycle, Repair, Refurbish, Redeploy, or Resale."
     ),
-    version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # restrict in production
+    allow_origins=["*"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Single shared analyser instance (model is cached after first load)
-_analyser = DeviceAnalyser()
-
-# AWS Lambda handler (used by API Gateway → Lambda integration)
-# api_gateway_base_path strips the stage prefix (e.g. /dev) that HTTP API v2
-# includes in the rawPath before passing it to FastAPI's router.
-_stage = os.getenv("STAGE", "")
-handler = Mangum(
-    app,
-    lifespan="off",
-    api_gateway_base_path=f"/{_stage}" if _stage else "/",
-)
-
-
-# ---------------------------------------------------------------------------
-# Routes
-# ---------------------------------------------------------------------------
-
-@app.get("/health", tags=["System"])
-def health_check() -> dict:
-    """
-    Liveness probe.  Returns 200 OK when the service is running.
-    """
-    return {"status": "ok", "service": "asset-lifecycle-optimizer"}
+# ── Strip API Gateway stage prefix ───────────────────────────────────────────
+# HTTP API v2 passes rawPath including the stage (e.g. /dev/api/health).
+# Strip the stage from the path so FastAPI routes correctly, but keep it in
+# root_path so Swagger UI generates correct absolute URLs like /dev/openapi.json.
+@app.middleware("http")
+async def strip_stage_prefix(request: Request, call_next):
+    stage = os.getenv("STAGE", "")
+    if stage and stage != "$default":
+        path = request.scope.get("path", "")
+        prefix = f"/{stage}"
+        if path.startswith(prefix + "/"):
+            request.scope["path"] = path[len(prefix):]
+            request.scope["root_path"] = prefix
+        elif path == prefix:
+            request.scope["path"] = "/"
+            request.scope["root_path"] = prefix
+    return await call_next(request)
 
 
-@app.get("/model_info", tags=["System"])
-def model_info() -> dict:
-    """
-    Returns the metadata of the currently loaded ML model artifact —
-    training date, best model name, test metrics, and feature lists.
-    """
-    if not _META_PATH.exists():
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Model metadata file not found. Ensure the model has been trained.",
-        )
-    with open(_META_PATH) as f:
-        return json.load(f)
+# ── DB init (module-level, runs once on Lambda cold start) ───────────────────
+# @app.on_event("startup") never fires when Mangum uses lifespan="off",
+# so we initialise the DB synchronously at import time instead.
+try:
+    from .db.database import init_db
+    init_db()
+    log.info("DB tables initialised / verified.")
+except Exception as exc:  # noqa: BLE001
+    log.warning("DB init failed at cold start (tables may be missing): %s", exc)
 
 
-@app.post(
-    "/analyse_device",
-    response_model=AnalysisResult,
-    status_code=status.HTTP_200_OK,
-    tags=["Analysis"],
-    summary="Analyse a device and recommend a lifecycle action",
-    response_description=(
-        "Full analysis result: ML risk label + probabilities, "
-        "policy classification, recommended action, "
-        "LLM explanation, and a ready-to-post ITSM task."
-    ),
-)
-def analyse_device(device: DeviceInput) -> AnalysisResult:
-    """
-    **Pipeline stages executed per request:**
+# ── Routers ───────────────────────────────────────────────────────────────────
 
-    1. **Feature engineering** — derives `incident_rate_per_month`,
-       `critical_incident_ratio`, `battery_degradation_rate`,
-       `thermal_events_per_month` from the supplied raw values.
+from .routers import assets, assess, approvals, kpis, ai, demo, audit_trail  # noqa: E402
 
-    2. **ML model** — loads the trained sklearn Pipeline from disk (cached),
-       predicts risk label (`high` / `medium` / `low`) and class probabilities.
-       Skipped when `data_completeness < 0.6` (policy-only path).
+app.include_router(assets.router)
+app.include_router(assess.router)
+app.include_router(approvals.router)
+app.include_router(kpis.router)
+app.include_router(ai.router)
+app.include_router(demo.router)
+app.include_router(audit_trail.router)
 
-    3. **Policy engine** — applies deterministic threshold rules:
-       *High* if `(age ≥ 42 AND tickets ≥ 5)` OR `(thermal ≥ 10 OR SMART ≥ 50)`,
-       *Medium* if partial criteria, *Low* otherwise.
-       Maps the risk level to a lifecycle action
-       (RECYCLE / REPAIR / REFURBISH / RESALE / REDEPLOY).
 
-    4. **LLM engine** — generates a factual ≤120-word explanation and a
-       structured ITSM task JSON.  Falls back to deterministic templates
-       if the LLM service times out (> 10 s) or is unavailable.
-    """
+# ── Utility endpoints ─────────────────────────────────────────────────────────
+
+_SRC_DIR  = Path(__file__).parent.parent
+_META_PATH = _SRC_DIR / "model_training" / "models" / "model_metadata.json"
+
+
+@app.get("/api/health", tags=["system"])
+def health():
+    from fastapi.responses import JSONResponse
+    db_status = "ok"
     try:
-        result = _analyser.analyse(device)
-        log.info(
-            "Request complete — asset_id=%s  final_action=%s  llm_available=%s",
-            device.asset_id,
-            result.final_action,
-            result.llm_result.llm_available,
-        )
+        from .db.database import get_db
+        db = next(get_db())
+        db.execute(__import__("sqlalchemy").text("SELECT 1"))
+        db.close()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Health check DB ping failed: %s", exc)
+        db_status = "unavailable"
+    return JSONResponse(
+        status_code=200,
+        content={"status": "ok", "version": "2.0.0", "db": db_status},
+    )
 
-        # Persist analysis result to S3 when storage is available
-        if _s3_storage:
-            try:
-                s3_key = _s3_storage.store_analysis_result(
-                    asset_id=device.asset_id,
-                    result=result.model_dump(),
-                )
-                log.info("Analysis result stored in S3: %s", s3_key)
-            except Exception as s3_exc:
-                log.warning("Failed to store result in S3: %s", s3_exc)
 
-        return result
-    except FileNotFoundError as exc:
-        log.error("Model artifact missing for asset %s: %s", device.asset_id, exc)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Model artifact not found: {exc}. Run train_model.py first.",
-        ) from exc
-    except Exception as exc:
-        log.exception("Unhandled error during analysis for asset %s: %s", device.asset_id, exc)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Analysis failed: {exc}",
-        ) from exc
+@app.get("/api/model_info", tags=["system"])
+def model_info():
+    try:
+        with open(_META_PATH) as f:
+            meta = json.load(f)
+        return meta
+    except FileNotFoundError:
+        return {"error": "Model metadata not found", "path": str(_META_PATH)}
+
+
+# ── AWS Lambda handler ────────────────────────────────────────────────────────
+# MUST keep the name `handler` — referenced in template.yaml as:
+#   Handler: src.backend.main.handler
+
+handler = Mangum(app, lifespan="off")

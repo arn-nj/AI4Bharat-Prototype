@@ -18,7 +18,7 @@ on:
   push:
     branches: [main, develop]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
 
 env:
   PYTHON_VERSION: "3.12"
@@ -52,8 +52,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install flake8 pytest pytest-cov httpx
+          pip install -r requirements-dev.txt
 
       - name: Lint with flake8
         run: |
@@ -66,7 +65,7 @@ jobs:
         run: |
           pytest tests/ -v --tb=short --cov=src --cov-report=xml --cov-report=term-missing || true
         env:
-          PYTHONPATH: src/backend:src/llm_engine:src/storage
+          PYTHONPATH: ${{ github.workspace }}
 
       - name: Upload coverage report
         if: always()
@@ -120,6 +119,14 @@ jobs:
       - name: Deploy backend to dev
         id: deploy
         run: |
+          # Always resolve the default VPC at runtime to avoid stale secret values
+          VPC_ID=$(aws ec2 describe-vpcs \
+            --filters Name=isDefault,Values=true \
+            --query 'Vpcs[0].VpcId' \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          echo "Using default VPC: ${VPC_ID}"
+
           sam deploy \
             --stack-name ewaste-optimizer-dev \
             --resolve-s3 \
@@ -130,8 +137,11 @@ jobs:
             --capabilities CAPABILITY_IAM \
             --parameter-overrides \
               StageName=dev \
-              BedrockModelId=${{ vars.BEDROCK_MODEL_ID || 'qwen.qwen3-30b-a3b' }} \
-              BedrockRegion=${{ env.AWS_REGION }}
+              BedrockModelId=${{ vars.BEDROCK_MODEL_ID || 'qwen.qwen3-next-80b-a3b' }} \
+              BedrockRegion=${{ env.AWS_REGION }} \
+              VpcId="${VPC_ID}" \
+              DBUsername=${{ vars.DB_USERNAME || 'ewasteadmin' }} \
+              DBPassword=${{ secrets.DB_PASSWORD_DEV }}
 
           API_URL=$(aws cloudformation describe-stacks \
             --stack-name ewaste-optimizer-dev \
@@ -157,7 +167,7 @@ jobs:
       - name: Build React frontend
         working-directory: src/frontend
         env:
-          VITE_BACKEND_URL: ${{ steps.deploy.outputs.api_url }}
+          VITE_API_URL: ${{ steps.deploy.outputs.api_url }}
         run: |
           npm ci
           npm run build
@@ -186,16 +196,21 @@ jobs:
       - name: Smoke test
         run: |
           API_URL="${{ steps.deploy.outputs.api_url }}"
-          echo "Testing health endpoint: ${API_URL}/health"
-          
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${API_URL}/health" --max-time 30)
-          
-          if [ "$HTTP_CODE" -eq 200 ]; then
-            echo "✅ Health check passed (HTTP $HTTP_CODE)"
-          else
-            echo "❌ Health check failed (HTTP $HTTP_CODE)"
-            exit 1
-          fi
+          echo "Testing health endpoint: ${API_URL}/api/health"
+
+          # Retry up to 5 times with 10s delay to allow Lambda cold start
+          for i in {1..5}; do
+            HTTP_CODE=$(curl -s -o /tmp/health_body.json -w "%{http_code}" "${API_URL}/api/health" --max-time 30)
+            echo "Attempt ${i}: HTTP ${HTTP_CODE}"
+            cat /tmp/health_body.json || true
+            if [ "$HTTP_CODE" -eq 200 ]; then
+              echo "✅ Health check passed (HTTP $HTTP_CODE)"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "❌ Health check failed after 5 attempts (last HTTP $HTTP_CODE)"
+          exit 1
 
       - name: Post-deployment summary
         run: |
@@ -209,7 +224,7 @@ jobs:
           echo "| API URL | ${API_URL} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Swagger Docs | ${API_URL}/docs |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Region | ${{ env.AWS_REGION }} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Bedrock Model | ${{ vars.BEDROCK_MODEL_ID || 'qwen.qwen3-30b-a3b' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Bedrock Model | ${{ vars.BEDROCK_MODEL_ID || 'qwen.qwen3-next-80b-a3b' }} |" >> "$GITHUB_STEP_SUMMARY"
 
   # ── 3. Deploy to Production ────────────────────────────────────────────
   deploy-prod:
@@ -255,6 +270,14 @@ jobs:
       - name: Deploy backend to production
         id: deploy
         run: |
+          # Always resolve the default VPC at runtime to avoid stale secret values
+          VPC_ID=$(aws ec2 describe-vpcs \
+            --filters Name=isDefault,Values=true \
+            --query 'Vpcs[0].VpcId' \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          echo "Using default VPC: ${VPC_ID}"
+
           sam deploy \
             --stack-name ewaste-optimizer-prod \
             --resolve-s3 \
@@ -265,8 +288,11 @@ jobs:
             --capabilities CAPABILITY_IAM \
             --parameter-overrides \
               StageName=prod \
-              BedrockModelId=${{ vars.BEDROCK_MODEL_ID || 'qwen.qwen3-30b-a3b' }} \
-              BedrockRegion=${{ env.AWS_REGION }}
+              BedrockModelId=${{ vars.BEDROCK_MODEL_ID || 'qwen.qwen3-next-80b-a3b' }} \
+              BedrockRegion=${{ env.AWS_REGION }} \
+              VpcId="${VPC_ID}" \
+              DBUsername=${{ vars.DB_USERNAME || 'ewasteadmin' }} \
+              DBPassword=${{ secrets.DB_PASSWORD_PROD }}
 
           API_URL=$(aws cloudformation describe-stacks \
             --stack-name ewaste-optimizer-prod \
@@ -292,7 +318,7 @@ jobs:
       - name: Build React frontend
         working-directory: src/frontend
         env:
-          VITE_BACKEND_URL: ${{ steps.deploy.outputs.api_url }}
+          VITE_API_URL: ${{ steps.deploy.outputs.api_url }}
         run: |
           npm ci
           npm run build
@@ -321,16 +347,21 @@ jobs:
       - name: Smoke test
         run: |
           API_URL="${{ steps.deploy.outputs.api_url }}"
-          echo "Testing health endpoint: ${API_URL}/health"
-          
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${API_URL}/health" --max-time 30)
-          
-          if [ "$HTTP_CODE" -eq 200 ]; then
-            echo "✅ Health check passed (HTTP $HTTP_CODE)"
-          else
-            echo "❌ Health check failed (HTTP $HTTP_CODE)"
-            exit 1
-          fi
+          echo "Testing health endpoint: ${API_URL}/api/health"
+
+          # Retry up to 5 times with 10s delay to allow Lambda cold start
+          for i in {1..5}; do
+            HTTP_CODE=$(curl -s -o /tmp/health_body.json -w "%{http_code}" "${API_URL}/api/health" --max-time 30)
+            echo "Attempt ${i}: HTTP ${HTTP_CODE}"
+            cat /tmp/health_body.json || true
+            if [ "$HTTP_CODE" -eq 200 ]; then
+              echo "✅ Health check passed (HTTP $HTTP_CODE)"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "❌ Health check failed after 5 attempts (last HTTP $HTTP_CODE)"
+          exit 1
 
       - name: Post-deployment summary
         run: |
@@ -344,4 +375,4 @@ jobs:
           echo "| API URL | ${API_URL} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Swagger Docs | ${API_URL}/docs |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Region | ${{ env.AWS_REGION }} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Bedrock Model | ${{ vars.BEDROCK_MODEL_ID || 'qwen.qwen3-30b-a3b' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Bedrock Model | ${{ vars.BEDROCK_MODEL_ID || 'qwen.qwen3-next-80b-a3b' }} |" >> "$GITHUB_STEP_SUMMARY"

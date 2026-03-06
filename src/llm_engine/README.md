@@ -27,7 +27,7 @@ The LLM sits at **Stage 4** of the decision pipeline. It does **not** make lifec
 | Variable | Default | Description |
 |---|---|---|
 | `AWS_REGION` | `us-east-1` | Bedrock service region |
-| `BEDROCK_MODEL_ID` | `qwen.qwen3-30b-a3b` | Bedrock model identifier |
+| `BEDROCK_MODEL_ID` | `qwen.qwen3-next-80b-a3b` | Bedrock model identifier |
 | `AWS_ACCESS_KEY_ID` | *(IAM role on Lambda)* | AWS access key — only needed locally |
 | `AWS_SECRET_ACCESS_KEY` | *(IAM role on Lambda)* | AWS secret key — only needed locally |
 
@@ -230,7 +230,7 @@ When deployed on Lambda, no `.env` credentials are needed — the IAM execution 
 
 ```
 AWS_REGION=us-east-1
-BEDROCK_MODEL_ID=qwen.qwen3-30b-a3b
+BEDROCK_MODEL_ID=qwen.qwen3-next-80b-a3b
 AWS_ACCESS_KEY_ID=<your-access-key-id>
 AWS_SECRET_ACCESS_KEY=<your-secret-access-key>
 ```

@@ -1,6 +1,6 @@
 {
   "name": "ewaste-optimizer-frontend",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "scripts": {
     "dev": "vite",
@@ -10,7 +10,10 @@
   },
   "dependencies": {
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.23.1",
+    "recharts": "^2.12.4",
+    "lucide-react": "^0.400.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.1",
