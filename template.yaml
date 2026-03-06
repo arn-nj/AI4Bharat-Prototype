@@ -138,7 +138,7 @@ Resources:
     DeletionPolicy: Snapshot   # keep data on stack delete
     Properties:
       DBInstanceIdentifier: !Sub "ewaste-db-${StageName}"
-      DBInstanceClass: !If [IsProd, db.t3.small, db.t3.micro]
+      DBInstanceClass: db.t3.micro   # free-tier only supports db.t3.micro; upgrade account to use larger instances
       DBName: ewaste
       Engine: postgres
       EngineVersion: "15.7"
