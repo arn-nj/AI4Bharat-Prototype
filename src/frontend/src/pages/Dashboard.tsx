@@ -214,7 +214,7 @@ export default function Dashboard() {
           <div className="grid grid-cols-3 md:grid-cols-6 gap-2 flex-shrink-0">
 
             {/* 1. Total Devices */}
-            <div className="bg-white rounded-lg px-3 py-2 shadow-sm border border-gray-100 flex items-center gap-2.5">
+            <div className="bg-white rounded-lg px-3 py-2 shadow-md border border-gray-100 flex items-center gap-2.5 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-150">
               <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
                 <Package size={15} className="text-gray-600" />
               </div>
@@ -226,7 +226,7 @@ export default function Dashboard() {
             </div>
 
             {/* 2. Avg Fleet Age */}
-            <div className="bg-indigo-50 rounded-lg px-3 py-2 shadow-sm border border-indigo-100 flex items-center gap-2.5">
+            <div className="bg-indigo-50 rounded-lg px-3 py-2 shadow-md border border-indigo-100 flex items-center gap-2.5 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-150">
               <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center flex-shrink-0">
                 <Clock size={15} className="text-indigo-600" />
               </div>
@@ -238,7 +238,7 @@ export default function Dashboard() {
             </div>
 
             {/* 3. High Risk — alert state */}
-            <div className={`rounded-lg px-3 py-2 shadow-sm border flex items-center gap-2.5 transition-colors ${
+            <div className={`rounded-lg px-3 py-2 shadow-md border flex items-center gap-2.5 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-150 ${
               kpis!.high_risk > 0 ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-100'
             }`}>
               <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
@@ -254,7 +254,7 @@ export default function Dashboard() {
             </div>
 
             {/* 4. Assessment Coverage — progress signal */}
-            <div className={`rounded-lg px-3 py-2 shadow-sm border flex items-center gap-2.5 transition-colors ${
+            <div className={`rounded-lg px-3 py-2 shadow-md border flex items-center gap-2.5 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-150 ${
               assessedPct < 60 ? 'bg-amber-50 border-amber-100' : 'bg-teal-50 border-teal-100'
             }`}>
               <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
@@ -270,7 +270,7 @@ export default function Dashboard() {
             </div>
 
             {/* 5. Pending Review — action signal */}
-            <div className="bg-amber-50 rounded-lg px-3 py-2 shadow-sm border border-amber-100 flex items-center gap-2.5">
+            <div className="bg-amber-50 rounded-lg px-3 py-2 shadow-md border border-amber-100 flex items-center gap-2.5 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-150">
               <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0">
                 <Bell size={15} className="text-amber-600" />
               </div>
@@ -282,7 +282,7 @@ export default function Dashboard() {
             </div>
 
             {/* 6. Deferred Spend — ROI metric */}
-            <div className="bg-blue-50 rounded-lg px-3 py-2 shadow-sm border border-blue-100 flex items-center gap-2.5">
+            <div className="bg-blue-50 rounded-lg px-3 py-2 shadow-md border border-blue-100 flex items-center gap-2.5 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-150">
               <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
                 <IndianRupee size={15} className="text-blue-600" />
               </div>
@@ -343,7 +343,7 @@ export default function Dashboard() {
             <div className="grid grid-cols-3 gap-2 flex-[3_1_0%] min-h-0">
 
               {/* Risk Distribution donut — high risk as centrepiece */}
-              <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-100 flex flex-col min-h-0">
+              <div className="bg-white rounded-xl p-3 shadow-md border border-gray-100 flex flex-col min-h-0 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-150">
                 <h2 className="text-xs font-semibold text-gray-800 mb-1 flex-shrink-0">Risk Distribution</h2>
                 <div className="relative flex-1 min-h-0">
                   <ResponsiveContainer width="100%" height="100%">
@@ -378,7 +378,7 @@ export default function Dashboard() {
               </div>
 
               {/* Risk by Region */}
-              <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-100 flex flex-col min-h-0">
+              <div className="bg-white rounded-xl p-3 shadow-md border border-gray-100 flex flex-col min-h-0 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-150">
                 <h2 className="text-xs font-semibold text-gray-800 mb-1 flex-shrink-0">Risk by Region</h2>
                 {riskByRegionData.length > 0 ? (
                   <div className="flex-1 min-h-0">
@@ -401,7 +401,7 @@ export default function Dashboard() {
               </div>
 
               {/* Device Mix donut */}
-              <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-100 flex flex-col min-h-0">
+              <div className="bg-white rounded-xl p-3 shadow-md border border-gray-100 flex flex-col min-h-0 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-150">
                 <h2 className="text-xs font-semibold text-gray-800 mb-1 flex-shrink-0">Device Mix</h2>
                 {deviceTypeData.length > 0 ? (
                   <>
@@ -434,7 +434,7 @@ export default function Dashboard() {
             <div className="grid grid-cols-3 gap-2 flex-[3_1_0%] min-h-0">
 
               {/* Circular Economy Actions — donut + % breakdown side by side */}
-              <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-100 flex flex-col min-h-0">
+              <div className="bg-white rounded-xl p-3 shadow-md border border-gray-100 flex flex-col min-h-0 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-150">
                 <div className="flex items-center justify-between mb-1 flex-shrink-0">
                   <h2 className="text-xs font-semibold text-gray-800">Asset Disposition</h2>
                   <span className="text-[10px] text-gray-400">{kpis!.assessed_count} assessed</span>
@@ -465,7 +465,7 @@ export default function Dashboard() {
               </div>
 
               {/* Decision Drivers */}
-              <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-100 flex flex-col min-h-0">
+              <div className="bg-white rounded-xl p-3 shadow-md border border-gray-100 flex flex-col min-h-0 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-150">
                 <div className="flex items-center justify-between mb-1 flex-shrink-0">
                   <h2 className="text-xs font-semibold text-gray-800">Decision Drivers</h2>
                   <span className="text-[10px] text-gray-400 italic">trained model</span>
@@ -488,7 +488,7 @@ export default function Dashboard() {
               </div>
 
               {/* Approval Workflow — progress bars, no duplication with KPI strip */}
-              <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-100 flex flex-col min-h-0">
+              <div className="bg-white rounded-xl p-3 shadow-md border border-gray-100 flex flex-col min-h-0 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-150">
                 <h2 className="text-xs font-semibold text-gray-800 mb-2 flex items-center gap-1.5 flex-shrink-0">
                   <Bell size={12} className="text-amber-500" />
                   Approval Workflow
