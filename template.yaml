@@ -150,7 +150,7 @@ Resources:
       PubliclyAccessible: true   # Lambda accesses over public endpoint
       VPCSecurityGroups:
         - !GetAtt RDSSecurityGroup.GroupId
-      BackupRetentionPeriod: !If [IsProd, 7, 1]
+      BackupRetentionPeriod: 1   # free-tier max; upgrade account to increase
       DeletionProtection: !If [IsProd, true, false]
       Tags:
         - Key: Project

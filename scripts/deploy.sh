@@ -16,7 +16,18 @@ REGION="${AWS_REGION:-us-east-1}"
 MODEL_ID="${BEDROCK_MODEL_ID:-qwen.qwen3-next-80b-a3b}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FRONTEND_DIR="${REPO_ROOT}/src/frontend"
+# Always resolve the default VPC at runtime to avoid stale secret values
+VPC_ID=$(aws ec2 describe-vpcs \
+  --filters Name=isDefault,Values=true \
+  --query 'Vpcs[0].VpcId' --output text --region "${REGION}")
+echo "Using default VPC: ${VPC_ID}"
 
+# DB password must be set in the environment (GitHub secret: DB_PASSWORD_PROD / DB_PASSWORD_DEV)
+DB_PASS="${DB_PASSWORD_PROD:-${DB_PASSWORD:-}}"
+if [[ -z "${DB_PASS}" ]]; then
+  echo "ERROR: DB_PASSWORD_PROD (or DB_PASSWORD) environment variable is not set." >&2
+  exit 1
+fi
 echo "═══════════════════════════════════════════════════════════"
 echo "  Deploying E-Waste Asset Lifecycle Optimizer"
 echo "  Stage:    ${STAGE}"
@@ -42,7 +53,9 @@ sam deploy \
   --parameter-overrides \
     "StageName=${STAGE}" \
     "BedrockModelId=${MODEL_ID}" \
-    "BedrockRegion=${REGION}"
+    "BedrockRegion=${REGION}" \
+    "VpcId=${VPC_ID}" \
+    "DBPassword=${DB_PASS}"
 
 # 3. Capture stack outputs
 API_URL=$(aws cloudformation describe-stacks \
