@@ -52,8 +52,8 @@ export default function Layout() {
           ))}
         </nav>
 
-        <div className="px-4 py-3 border-t border-gray-700 text-xs text-gray-500">
-          <p>v2.0.0 · Bedrock Qwen3</p>
+        <div className="px-4 py-3 border-t border-gray-700 text-xs text-gray-400">
+          <p>© 2026 HPE Singularity Crew. All rights reserved.</p>
         </div>
       </aside>
 

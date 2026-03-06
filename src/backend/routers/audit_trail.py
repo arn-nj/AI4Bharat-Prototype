@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -28,8 +29,13 @@ def list_audit(
     if actor:
         q = q.filter_by(actor=actor)
     rows = q.offset((page - 1) * page_size).limit(page_size).all()
-    return [
-        {
+    result = []
+    for r in rows:
+        try:
+            snap = json.loads(r.asset_snapshot_json or "{}")
+        except Exception:
+            snap = {}
+        result.append({
             "audit_id": r.audit_id,
             "recommendation_id": r.recommendation_id,
             "asset_id": r.asset_id,
@@ -43,6 +49,9 @@ def list_audit(
             "llm_impact": r.llm_impact,
             "llm_pre_decision_json": r.llm_pre_decision_json,
             "original_action": r.original_action,
-        }
-        for r in rows
-    ]
+            # Fields from asset snapshot for display purposes
+            "device_type": snap.get("device_type"),
+            "department": snap.get("department"),
+            "region": snap.get("region"),
+        })
+    return result

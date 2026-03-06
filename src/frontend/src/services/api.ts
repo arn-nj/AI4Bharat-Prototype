@@ -164,6 +164,7 @@ export interface AssetOut extends AssetCreate {
   current_state: string;
   created_at?: string;
   updated_at?: string;
+  last_assessed_at?: string | null;
 }
 
 export interface MLScores {
@@ -275,6 +276,10 @@ export interface AuditEntryRow {
   llm_impact?: string | null;
   llm_pre_decision_json?: string | null;
   original_action?: string | null;
+  // Denormalised from asset snapshot — used for display
+  device_type?: string | null;
+  department?: string | null;
+  region?: string | null;
 }
 
 export interface KPIOut {
@@ -292,6 +297,9 @@ export interface KPIOut {
   action_percentages: Record<string, number>;
   departments: Record<string, number>;
   risk_by_department: Record<string, Record<string, number>>;
+  risk_by_region: Record<string, Record<string, number>>;
+  device_type_counts: Record<string, number>;
+  action_trend_30d: Array<{ date: string; approved: number; rejected: number }>;
   co2_saved_kg: number;
   landfill_reduction_kg: number;
   carbon_offset_trees: number;

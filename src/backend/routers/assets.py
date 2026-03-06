@@ -9,7 +9,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from ..db.database import AssetRow, get_db
+from ..db.database import AssetRow, RiskAssessmentRow, get_db
 from ..orm_models.asset import AssetCreate, AssetOut
 
 router = APIRouter(prefix="/api/assets", tags=["assets"])
@@ -94,7 +94,15 @@ def list_assets(
     if state:
         q = q.filter_by(current_state=state)
     rows = q.order_by(AssetRow.updated_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
-    return [AssetOut(**r.__dict__) for r in rows]
+    # Resolve last_assessed_at from risk_assessments (source of truth, not updated_at)
+    asset_ids = [r.asset_id for r in rows]
+    risk_rows = db.query(RiskAssessmentRow.asset_id, RiskAssessmentRow.assessed_at)\
+        .filter(RiskAssessmentRow.asset_id.in_(asset_ids)).all()
+    risk_map: dict[str, str] = {}
+    for ar_id, ar_at in risk_rows:
+        if ar_id not in risk_map or (ar_at or '') > risk_map[ar_id]:
+            risk_map[ar_id] = ar_at or ''
+    return [AssetOut(**r.__dict__, last_assessed_at=risk_map.get(r.asset_id)) for r in rows]
 
 
 @router.get("/{asset_id}", response_model=AssetOut)
@@ -102,7 +110,9 @@ def get_asset(asset_id: str, db: Session = Depends(get_db)):
     row = db.query(AssetRow).filter_by(asset_id=asset_id).first()
     if not row:
         raise HTTPException(404, f"Asset {asset_id} not found")
-    return AssetOut(**row.__dict__)
+    risk_row = db.query(RiskAssessmentRow).filter_by(asset_id=asset_id)\
+        .order_by(RiskAssessmentRow.assessed_at.desc()).first()
+    return AssetOut(**row.__dict__, last_assessed_at=risk_row.assessed_at if risk_row else None)
 
 
 @router.delete("/{asset_id}", status_code=204)

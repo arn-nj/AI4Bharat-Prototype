@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend,
+  LineChart, Line,
 } from 'recharts';
-import { Leaf, Recycle, Wrench, Package, RefreshCw, TreePine, AlertTriangle, Pause, Play, BrainCircuit } from 'lucide-react';
+import { Leaf, Recycle, Wrench, Package, RefreshCw, TreePine, AlertTriangle, Pause, Play, BrainCircuit, Clock, BarChart2 } from 'lucide-react';
 import { getKPIs, getModelInfo, generateDemo, getFleetNarrative, type KPIOut, type ModelInfo } from '../services/api';
 import KPICard from '../components/KPICard';
 
@@ -132,6 +133,23 @@ export default function Dashboard() {
     { name: 'Low',  value: kpis.low_risk,    fill: RISK_COLORS.low    },
   ] : [];
 
+  // Risk by Region stacked bar data
+  const riskByRegionData = kpis
+    ? Object.entries(kpis.risk_by_region).map(([region, counts]) => ({
+        region,
+        high: counts.high ?? 0,
+        medium: counts.medium ?? 0,
+        low: counts.low ?? 0,
+      }))
+    : [];
+
+  // Device type breakdown data
+  const deviceTypeData = kpis
+    ? Object.entries(kpis.device_type_counts)
+        .sort((a, b) => b[1] - a[1])
+        .map(([name, count]) => ({ name, count }))
+    : [];
+
   // Decision Drivers from model feature importances
   const driverData = modelInfo?.feature_importances
     ?.slice(0, 6)
@@ -189,13 +207,29 @@ export default function Dashboard() {
       ) : (
         <>
           {/* KPI strip — row 1 */}
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             <KPICard
               label="Total Devices"
               value={kpis!.total_assets}
               sub={`${kpis!.assessed_count} assessed`}
               icon={<Package size={20} />}
             />
+            <KPICard
+              label="Avg Fleet Age"
+              value={`${kpis!.avg_age_months} mo`}
+              sub={`${(kpis!.avg_age_months / 12).toFixed(1)} years`}
+              color="bg-indigo-50"
+              icon={<Clock size={20} className="text-indigo-400" />}
+            />
+            <KPICard
+              label="CO₂ Saved"
+              value={`${kpis!.co2_saved_kg} kg`}
+              color="bg-green-50"
+              icon={<Leaf size={20} className="text-green-500" />}
+            />
+          </div>
+          {/* KPI strip — row 2 */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <KPICard
               label="Recycle %"
               value={`${kpis!.action_percentages?.recycle ?? 0}%`}
@@ -217,12 +251,6 @@ export default function Dashboard() {
               label="Redeploy %"
               value={`${kpis!.action_percentages?.redeploy ?? 0}%`}
               color="bg-blue-50"
-            />
-            <KPICard
-              label="CO₂ Saved"
-              value={`${kpis!.co2_saved_kg} kg`}
-              color="bg-green-50"
-              icon={<Leaf size={20} className="text-green-500" />}
             />
           </div>
 
@@ -261,9 +289,7 @@ export default function Dashboard() {
             <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="font-semibold text-gray-800">Action Distribution</h2>
-                <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
-                  + LLM insight
-                </span>
+                <span className="text-xs text-gray-400">{kpis!.assessed_count} of {kpis!.total_assets} assessed</span>
               </div>
               <div className="h-52">
                 <ResponsiveContainer width="100%" height="100%">
@@ -404,6 +430,73 @@ export default function Dashboard() {
               </div>
             </div>
           </div>
+
+          {/* Row 5: Risk by Region + Device Type Breakdown */}
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+              <h2 className="font-semibold text-gray-800 mb-3">Risk by Region</h2>
+              {riskByRegionData.length > 0 ? (
+                <div className="h-52">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={riskByRegionData} margin={{ left: 0, right: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="region" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                      <Tooltip />
+                      <Legend wrapperStyle={{ fontSize: 11 }} />
+                      <Bar dataKey="high" stackId="a" name="High" fill={RISK_COLORS.high} />
+                      <Bar dataKey="medium" stackId="a" name="Medium" fill={RISK_COLORS.medium} />
+                      <Bar dataKey="low" stackId="a" name="Low" fill={RISK_COLORS.low} radius={[4,4,0,0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-400 mt-8 text-center">No region data available</p>
+              )}
+            </div>
+
+            <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+              <h2 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                <BarChart2 size={16} className="text-indigo-400" />
+                Device Type Breakdown
+              </h2>
+              {deviceTypeData.length > 0 ? (
+                <div className="h-52">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={deviceTypeData} layout="vertical" margin={{ left: 10, right: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                      <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
+                      <YAxis type="category" dataKey="name" width={110} tick={{ fontSize: 11 }} />
+                      <Tooltip />
+                      <Bar dataKey="count" name="Devices" fill="#6366f1" radius={[0, 4, 4, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-400 mt-8 text-center">No device data available</p>
+              )}
+            </div>
+          </div>
+
+          {/* Row 6: Action Trend (last 30 days) */}
+          {kpis!.action_trend_30d.length > 0 && (
+            <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+              <h2 className="font-semibold text-gray-800 mb-3">Approval Decisions — Last 30 Days</h2>
+              <div className="h-48">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={kpis!.action_trend_30d} margin={{ left: 0, right: 10 }}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={d => d.slice(5)} />
+                    <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                    <Tooltip labelFormatter={d => `Date: ${d}`} />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    <Line type="monotone" dataKey="approved" name="Approved" stroke="#22c55e" strokeWidth={2} dot={{ r: 3 }} />
+                    <Line type="monotone" dataKey="rejected" name="Rejected" stroke="#ef4444" strokeWidth={2} dot={{ r: 3 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import enum
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
 
 
@@ -56,6 +56,12 @@ class KPIOut(BaseModel):
     # Department breakdown
     departments: Dict[str, int]
     risk_by_department: Dict[str, Dict[str, int]]
+    # Region breakdown
+    risk_by_region: Dict[str, Dict[str, int]]
+    # Device type counts
+    device_type_counts: Dict[str, int]
+    # Action trend (last 30 days) [{date, approved, rejected}]
+    action_trend_30d: List[Dict[str, Any]]
     # Environmental impact (strong differentiator)
     co2_saved_kg: float
     landfill_reduction_kg: float

@@ -88,3 +88,4 @@ class AssetOut(BaseModel):
     avg_resolution_time_hours: Optional[float] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+    last_assessed_at: Optional[str] = None  # latest assessed_at from risk_assessments table
