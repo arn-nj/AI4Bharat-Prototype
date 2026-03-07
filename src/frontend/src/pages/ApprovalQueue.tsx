@@ -31,7 +31,11 @@ export default function ApprovalQueue() {
 
   const load = async () => {
     setLoading(true);
-    try { setQueue(await getApprovalQueue()); } finally { setLoading(false); }
+    try {
+      const data = await getApprovalQueue();
+      data.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      setQueue(data);
+    } finally { setLoading(false); }
   };
 
   useEffect(() => { load(); }, []);

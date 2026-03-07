@@ -44,6 +44,38 @@ export const deleteAsset = (assetId: string) =>
 export const assessAsset = (assetId: string) =>
   apiFetch<AssessmentResultOut>(`/assess/${assetId}`, { method: 'POST' });
 
+/** Fetch ALL unassessed assets across every page (max page_size=100 per server limit). */
+export async function fetchAllUnassessed(): Promise<AssetOut[]> {
+  const result: AssetOut[] = [];
+  let page = 1;
+  while (true) {
+    const batch = await getAssets({ page: String(page), page_size: '100' });
+    result.push(...batch.filter(a => !a.last_assessed_at));
+    if (batch.length < 100) break;
+    page++;
+  }
+  return result;
+}
+
+/** Assess asset IDs in parallel (concurrency=5); calls onProgress after each completion. */
+export async function assessBulk(
+  assetIds: string[],
+  onProgress: (done: number, total: number) => void,
+  concurrency = 5,
+): Promise<void> {
+  let done = 0;
+  const queue = [...assetIds];
+  async function worker() {
+    while (queue.length > 0) {
+      const id = queue.shift();
+      if (!id) break;
+      await assessAsset(id);
+      onProgress(++done, assetIds.length);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, assetIds.length) }, worker));
+}
+
 // ── Approvals ─────────────────────────────────────────────────
 
 export const getApprovalQueue = () =>

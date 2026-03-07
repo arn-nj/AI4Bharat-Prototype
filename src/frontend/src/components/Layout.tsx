@@ -26,11 +26,14 @@ export default function Layout() {
       {/* Sidebar */}
       <aside className="w-64 bg-gray-900 text-white flex flex-col shrink-0">
         <div className="px-6 py-5 border-b border-gray-700 flex items-center gap-3">
-          <Leaf className="text-green-400" size={24} />
+          
+          <Leaf className="text-green-600" size={24} />
           <div>
-            <p className="font-bold text-base leading-tight">Capital-E</p>
-            <p className="text-xs text-gray-400">E-Waste/E-Scrap Expert</p>
-          </div>
+            <p className="font-bold text-2xl text-center leading-tight">Capital-E</p>
+            
+            
+            <p className="text-xs text-center text-gray-400">Intelligent E‑Waste & Asset Lifecycle Optimizer</p>
+            </div>
         </div>
 
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
